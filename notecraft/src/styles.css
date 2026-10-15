@@ -1721,3 +1721,47 @@ kbd {
 [data-paper="dark"] .oe-editable span[style*="background-color"] {
   color: #1d1f23;
 }
+
+/* ---- desktop app (Electron) --------------------------------------------------------------- */
+
+.foot-wide {
+  grid-column: 1 / -1;
+}
+/* macOS: the window has an inset title bar; leave room for the traffic lights and let the top strip drag the window. */
+[data-desktop="darwin"] .sidebar {
+  padding-top: 30px;
+}
+[data-desktop="darwin"] .sidebar::before,
+[data-desktop="darwin"] .pagelist::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  height: 30px;
+  -webkit-app-region: drag;
+}
+[data-desktop="darwin"] .sidebar,
+[data-desktop="darwin"] .pagelist {
+  position: relative;
+}
+[data-desktop="darwin"] .sidebar::before {
+  left: 0;
+  width: 100%;
+}
+[data-desktop="darwin"] .pagelist {
+  padding-top: 30px;
+}
+[data-desktop="darwin"] .pagelist::before {
+  left: 0;
+  width: 100%;
+}
+[data-desktop="darwin"] .ribbon-tabs {
+  padding-top: 8px;
+  -webkit-app-region: drag;
+}
+[data-desktop="darwin"] .ribbon-tabs button,
+[data-desktop="darwin"] .ribbon-tabs .tb-menu {
+  -webkit-app-region: no-drag;
+}
+[data-desktop="darwin"] .app.is-full-page .ribbon-tabs {
+  padding-left: 80px;
+}

@@ -34,6 +34,7 @@ function toBase64(bytes: Uint8Array): string {
   return btoa(s);
 }
 
+/** Parse a .one file in this process and import it. */
 export function importOneFile(bytes: Uint8Array, fileName: string): ImportResult {
   const assets = new Map<string, string>();
   const json: NotebookJson = parseOneNote(bytes, {
@@ -44,6 +45,15 @@ export function importOneFile(bytes: Uint8Array, fileName: string): ImportResult
       return id;
     },
   });
+  return importNotebookJson(json, fileName, assets);
+}
+
+/**
+ * Import already-parsed parser output. `assets` maps the ids the parser's
+ * onAsset hook returned to data URLs (the desktop app parses in its main
+ * process, where OneNote's cache can fill in missing pictures).
+ */
+export function importNotebookJson(json: NotebookJson, fileName: string, assets: Map<string, string>): ImportResult {
   const stats = { pages: 0, outlines: 0, paragraphs: 0, tables: 0, images: 0, imagesWithoutData: 0, warnings: json.diagnostics.warnings.length };
 
   const runOf = (r: TextRun): Run => {

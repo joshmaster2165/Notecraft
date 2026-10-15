@@ -8,19 +8,104 @@
     "build": "tsc -p tsconfig.json --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1 --port 5191",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --test src/model/ops.test.ts src/model/versions.test.ts"
-  },
-  "dependencies": {
-    "immer": "10.2.0",
-    "react": "19.2.0",
-    "react-dom": "19.2.0"
+    "test": "node --test src/model/ops.test.ts src/model/versions.test.ts",
+    "build:electron": "node electron/build.mjs",
+    "desktop": "npm run build && npm run build:electron && electron .",
+    "desktop:dev": "npm run build:electron && NOTECRAFT_DEV_URL=http://127.0.0.1:5190 electron .",
+    "dist": "npm run build && npm run build:electron && electron-builder",
+    "dist:mac": "npm run build && npm run build:electron && electron-builder --mac",
+    "dist:win": "npm run build && npm run build:electron && electron-builder --win",
+    "dist:linux": "npm run build && npm run build:electron && electron-builder --linux"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "@types/node": "24.9.1",
     "@types/react": "19.2.2",
     "@types/react-dom": "19.2.2",
     "@vitejs/plugin-react": "4.7.0",
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.25.12",
+    "immer": "10.2.0",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
     "typescript": "5.9.3",
     "vite": "6.4.4"
+  },
+  "description": "Local-first, OneNote-style notebook app",
+  "author": {
+    "name": "joshmaster2165",
+    "email": "35616004+joshmaster2165@users.noreply.github.com"
+  },
+  "homepage": "https://github.com/joshmaster2165/Notecraft",
+  "main": "dist-electron/main.cjs",
+  "build": {
+    "appId": "app.notecraft.desktop",
+    "productName": "Notecraft",
+    "copyright": "Copyright \u00a9 2026 joshmaster2165",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**",
+      "dist-electron/**",
+      "package.json"
+    ],
+    "asar": true,
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.icns",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "identity": "-",
+      "hardenedRuntime": false,
+      "darkModeSupport": true
+    },
+    "dmg": {
+      "title": "Notecraft ${version}"
+    },
+    "win": {
+      "icon": "build/icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false
+    },
+    "linux": {
+      "icon": "build/icon.png",
+      "category": "Office",
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "maintainer": "joshmaster2165"
+    },
+    "publish": null
   }
 }

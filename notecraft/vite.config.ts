@@ -8,6 +8,8 @@ import { fileURLToPath } from "node:url";
 const reRoot = fileURLToPath(new URL("../onenote-re", import.meta.url));
 
 export default defineConfig({
+  // Relative asset paths so the same build loads from file:// in the desktop app.
+  base: "./",
   plugins: [react()],
   resolve: {
     alias: { "@re": reRoot },

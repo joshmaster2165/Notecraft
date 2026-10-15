@@ -1,7 +1,29 @@
 # Notecraft
 
-A local-first, free-form notebook for the web. Its behaviour comes from the
-static analysis of OneNote for Mac 16.114 in [`../onenote-re`](../onenote-re).
+A local-first, free-form notebook for macOS, Windows, Linux and the web. Its
+behaviour comes from the static analysis of OneNote for Mac 16.114 in
+[`../onenote-re`](../onenote-re). See **[docs/PARITY.md](docs/PARITY.md)** for
+the feature-by-feature OneNote checklist.
+
+## Download
+
+Installers are attached to each [GitHub Release](https://github.com/joshmaster2165/Notecraft/releases):
+
+| Platform | File |
+|---|---|
+| macOS (Apple Silicon) | `Notecraft-<version>-mac-arm64.dmg` |
+| macOS (Intel) | `Notecraft-<version>-mac-x64.dmg` |
+| Windows | `Notecraft-<version>-win-x64.exe` |
+| Linux | `.AppImage` or `.deb` |
+
+The macOS app is ad-hoc signed, not notarized. The first time, right-click
+Notecraft in Applications and choose **Open**, or run
+`xattr -dr com.apple.quarantine /Applications/Notecraft.app`.
+
+In the desktop app, **File › Import from OneNote on This Computer** finds the
+notebooks OneNote keeps on your machine and imports each one, with its page
+history and any pictures in OneNote's cache. macOS asks once whether
+Notecraft may read another app's data.
 It reuses that workspace's code directly:
 
 - **`@re/parser`** is the reverse-engineered `.one` revision-store parser. It
@@ -9,12 +31,19 @@ It reuses that workspace's code directly:
 - **`@re/canvas`** is `<OneNoteCanvas>`, the reconstructed pan/zoom surface
   every page sits on.
 
+## Develop
+
 ```bash
 npm install
-npm run dev        # http://127.0.0.1:5190
-npm test           # editing-model and version-history tests
-npm run build      # typecheck + production bundle in dist/
+npm run dev          # web app at http://127.0.0.1:5190
+npm run desktop      # build and open the desktop app
+npm run desktop:dev  # desktop shell around the running dev server
+npm test             # editing-model and version-history tests
+npm run dist:mac     # installers in release/ (also dist:win, dist:linux)
 ```
+
+Push a tag like `v0.2.0` and the [release workflow](../.github/workflows/release.yml)
+builds the installers for every platform and publishes a Release.
 
 The library is saved in the browser's IndexedDB on every change. Use
 **Export** to download a notebook as `.notecraft.json`.
@@ -76,6 +105,14 @@ src/
   ui/PageCanvas.tsx   page surface on <OneNoteCanvas>
   ui/editor/*         paragraphs, outlines, tables, images
   ui/VersionsPanel.tsx    version list, read-only preview banner, restore
+  ui/TagsPanel.tsx        Find Tags (Tags Summary)
+  ui/Dialogs.tsx          Move or Copy, Page Templates, Deleted Notes, Import from OneNote
+  ui/editor/InkLayer.tsx  pen, highlighter, eraser
+  model/tags.ts           OneNote's tag catalog
+  model/templates.ts      built-in page templates
+  store/links.ts          page links and [[wiki]] links
+  electron/main.ts        desktop window, native menus, OneNote discovery and parsing (with cache pictures)
+  electron/preload.ts     the bridge between the page and the main process
   ui/Sidebar.tsx, PageList.tsx, Toolbar.tsx, SearchPanel.tsx
 ```
 
@@ -98,12 +135,15 @@ src/
 
 ## Roadmap the analysis already supports
 
+The remaining gaps are listed in [docs/PARITY.md](docs/PARITY.md). These ones
+already have the groundwork mapped in the format analysis:
+
 | Next feature | What to build on |
 |---|---|
 | Author attribution per paragraph | `AuthorOriginal 0x20001D78`, `AuthorMostRecent 0x20001D79` → `ReadOnlyPersistablePropertyContainerForAuthor 0x120001` |
-| Section groups and notebook import | `.onetoc2` table of contents. The parser reads its container; its semantics still need mapping (FF §10) |
-| Custom tag definitions | `NoteTagSharedDefinitionContainer 0x120043`: label, shape, highlight and text colours |
-| Background images and page templates | `ImageNode.IsBackground 0x08001D13`, page margins `0x14001C4C–4F` |
-| Ink | `InkContainer 0x60047`, `InkStrokeNode 0x60048`; the strokes are not decoded yet |
+| Reading `.onetoc2` directly (section order, groups, colors) | The `.onetoc2` table of contents. The parser reads its container; its semantics still need mapping (FF §10) |
+| Creating custom tags | `NoteTagSharedDefinitionContainer 0x120043`: label, shape, highlight and text colours |
+| Background images | `ImageNode.IsBackground 0x08001D13`, page margins `0x14001C4C–4F` |
+| Importing OneNote ink | `InkContainer 0x60047`, `InkStrokeNode 0x60048`; the strokes are not decoded yet (Notecraft's own ink works) |
 | Password-protected sections | `ObjectDataEncryptionKeyV2FNDX`, detected by the parser today |
 | Write `.one` files | The writer routines are mapped: fragment create/finalize `FUN_100d32b74`/`FUN_100d32d8c`, FileDataStoreObject writer `FUN_100d1be84` (FF §9) |

@@ -25,7 +25,7 @@ export interface DrawState {
 }
 
 export type SidePanel = "versions" | "tags" | null;
-export type Dialog = { kind: "movePage"; pageId: Id } | { kind: "moveSection"; sectionId: Id } | { kind: "templates" } | { kind: "trash" } | null;
+export type Dialog = { kind: "movePage"; pageId: Id } | { kind: "moveSection"; sectionId: Id } | { kind: "templates" } | { kind: "trash" } | { kind: "oneNoteImport" } | null;
 
 export interface UiState {
   notebookId: Id | null;

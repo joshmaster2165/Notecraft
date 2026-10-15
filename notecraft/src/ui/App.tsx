@@ -12,6 +12,50 @@ import { Dialogs } from "./Dialogs.tsx";
 import { FindBar } from "./FindBar.tsx";
 import { canvasApi } from "./canvasApi.ts";
 import { mod } from "./editor/Paragraph.tsx";
+import { desktop } from "../desktop.ts";
+import * as ops from "../model/ops.ts";
+import { currentPage, exportNotebook, exportPageMarkdown, newNotebook, newPage, newSection, newSectionGroup, printPage } from "../store/actions.ts";
+
+/** Native menu commands (desktop app) mapped onto the same actions as the UI. */
+function useDesktopCommands() {
+  useEffect(() => {
+    if (!desktop) return;
+    document.documentElement.dataset.desktop = desktop.platform;
+    const inEditor = () => !!(document.activeElement as HTMLElement | null)?.closest?.(".oe-editable");
+    const ui = () => store.getState().ui;
+    const handlers: Record<string, () => void> = {
+      newPage: () => newPage(),
+      newSubpage: () => newPage({ asSubpage: true }),
+      newSection: () => void newSection(),
+      newSectionGroup: () => void newSectionGroup(),
+      newNotebook: () => newNotebook(),
+      importFromOneNote: () => store.setUi({ dialog: { kind: "oneNoteImport" } }),
+      importFiles: () => document.querySelector<HTMLInputElement>(".sidebar-foot input[type=file]")?.click(),
+      exportNotebook: () => exportNotebook(),
+      exportMarkdown: () => exportPageMarkdown(),
+      print: () => printPage(),
+      undo: () => (store.undo(), repairSelection()),
+      redo: () => (store.redo(), repairSelection()),
+      find: () => store.setUi({ findOpen: true }),
+      search: () => store.setUi({ searchOpen: true }),
+      tags: () => store.setUi({ sidePanel: ui().sidePanel === "tags" ? null : "tags" }),
+      deletedNotes: () => store.setUi({ dialog: { kind: "trash" } }),
+      zoomIn: () => canvasApi.current?.zoomIn(),
+      zoomOut: () => canvasApi.current?.zoomOut(),
+      // In a paragraph ⌘0 removes tags (OneNote); elsewhere it resets zoom.
+      zoom100: () => {
+        const a = ui().active;
+        if (inEditor() && a) store.edit((d) => ops.clearTags(d, a.ref, a.elementId));
+        else canvasApi.current?.setZoom(1);
+      },
+      pageWidth: () => canvasApi.current?.zoomToPageWidth(),
+      fullPage: () => store.setUi({ fullPage: !ui().fullPage }),
+      versions: () => currentPage() && store.setUi({ sidePanel: ui().sidePanel === "versions" ? null : "versions", preview: null }),
+      templates: () => store.setUi({ dialog: { kind: "templates" } }),
+    };
+    return desktop.onCommand((cmd) => handlers[cmd]?.());
+  }, []);
+}
 
 function useGlobalShortcuts() {
   useEffect(() => {
@@ -92,6 +136,7 @@ export function App() {
   const preview = useStore((s) => (s.ui.preview && s.ui.preview.pageId === s.ui.pageId ? s.ui.preview : null));
   const [dragging, setDragging] = useState(false);
   useGlobalShortcuts();
+  useDesktopCommands();
 
   if (!loaded) return <div className="boot">Opening notebooks…</div>;
 

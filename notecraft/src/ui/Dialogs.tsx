@@ -4,7 +4,8 @@ import * as ops from "../model/ops.ts";
 import { TRASH_DAYS } from "../model/ops.ts";
 import { BUILTIN_TEMPLATES } from "../model/templates.ts";
 import { store, useStore } from "../store/store.ts";
-import { movePage, moveSectionTo, newPageFromTemplate, restoreFromTrash, saveCurrentPageAsTemplate } from "../store/actions.ts";
+import { importOneNoteNotebooks, movePage, moveSectionTo, newPageFromTemplate, restoreFromTrash, saveCurrentPageAsTemplate, type OneNoteImportProgress } from "../store/actions.ts";
+import { desktop, type FoundNotebook } from "../desktop.ts";
 import { Icon } from "./icons.tsx";
 
 function Modal({ title, children, onClose, footer }: { title: string; children: ReactNode; onClose: () => void; footer?: ReactNode }) {
@@ -191,11 +192,83 @@ function TrashDialog() {
   );
 }
 
+const sizeLabel = (b: number) => (b < 1e6 ? `${Math.max(1, Math.round(b / 1024))} KB` : `${(b / 1e6).toFixed(1)} MB`);
+
+/** Desktop only: pick OneNote notebooks/sections found on this computer and import them. */
+function OneNoteImportDialog() {
+  const [found, setFound] = useState<FoundNotebook[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [progress, setProgress] = useState<OneNoteImportProgress | null>(null);
+  useEffect(() => {
+    desktop
+      ?.scanOneNote()
+      .then((r) => {
+        setFound(r.notebooks);
+        setPicked(new Set(r.notebooks.flatMap((n) => n.sections.map((s) => s.path))));
+      })
+      .catch((e: Error) => setError(e.message));
+  }, []);
+  const toggle = (paths: string[], on: boolean) =>
+    setPicked((prev) => {
+      const next = new Set(prev);
+      for (const p of paths) on ? next.add(p) : next.delete(p);
+      return next;
+    });
+  const run = async () => {
+    const picks = (found ?? []).map((n) => ({ notebook: n.name, sections: n.sections.filter((s) => picked.has(s.path)) })).filter((p) => p.sections.length);
+    await importOneNoteNotebooks(picks, setProgress);
+    close();
+  };
+  return (
+    <Modal
+      title="Import from OneNote"
+      onClose={progress ? () => undefined : close}
+      footer={
+        <>
+          <span className="dialog-note">{progress ? `Importing ${progress.done} of ${progress.total}… ${progress.current ?? ""}` : `${picked.size} section${picked.size === 1 ? "" : "s"} selected`}</span>
+          <span className="tb-spacer" />
+          <button className="btn btn-primary" disabled={!picked.size || !!progress} onClick={() => void run()}>Import</button>
+        </>
+      }
+    >
+      <p className="dialog-note">
+        Notecraft reads OneNote's local copies of your notebooks. Each notebook is imported as a Notecraft notebook, with its page history and any pictures OneNote has downloaded. Nothing is uploaded, and OneNote is not changed.
+      </p>
+      {error && <p className="dialog-note">Couldn't read OneNote's folder: {error}</p>}
+      {!found && !error && <p className="dialog-note">Looking for OneNote notebooks…</p>}
+      {found?.length === 0 && <p className="dialog-note">No OneNote notebooks were found on this computer. Open OneNote once so it saves its local backups, or use File › Import .one Files.</p>}
+      <div className="pick-list">
+        {found?.map((n) => {
+          const paths = n.sections.map((s) => s.path);
+          const all = paths.every((p) => picked.has(p));
+          return (
+            <div key={n.name}>
+              <label className="pick-group">
+                <input type="checkbox" checked={all} onChange={(e) => toggle(paths, e.target.checked)} disabled={!!progress} />
+                <Icon.notebook width={15} height={15} /> {n.name}
+              </label>
+              {n.sections.map((s) => (
+                <label key={s.path} className="pick-item">
+                  <input type="checkbox" checked={picked.has(s.path)} onChange={(e) => toggle([s.path], e.target.checked)} disabled={!!progress} />
+                  {s.name}
+                  <span className="menu-meta">{sizeLabel(s.bytes)}</span>
+                </label>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    </Modal>
+  );
+}
+
 export function Dialogs() {
   const dialog = useStore((s) => s.ui.dialog);
   if (!dialog) return null;
   if (dialog.kind === "movePage") return <MovePageDialog pageId={dialog.pageId} />;
   if (dialog.kind === "moveSection") return <MoveSectionDialog sectionId={dialog.sectionId} />;
   if (dialog.kind === "templates") return <TemplatesDialog />;
+  if (dialog.kind === "oneNoteImport") return <OneNoteImportDialog />;
   return <TrashDialog />;
 }

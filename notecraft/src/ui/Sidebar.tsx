@@ -5,6 +5,7 @@ import * as ops from "../model/ops.ts";
 import { store, useStore } from "../store/store.ts";
 import { deleteSection, exportNotebook, importFiles, newNotebook, newSection, newSectionGroup, selectNotebook, selectSection } from "../store/actions.ts";
 import { Icon, Logo } from "./icons.tsx";
+import { desktop } from "../desktop.ts";
 
 function InlineRename({ value, onDone }: { value: string; onDone: (v: string | null) => void }) {
   const ref = useRef<HTMLInputElement>(null);
@@ -260,7 +261,12 @@ export function Sidebar() {
       </button>
 
       <div className="sidebar-foot">
-        <button className="foot-btn" onClick={() => fileInput.current?.click()} title="Import .one sections or an Notecraft export">
+        {desktop && (
+          <button className="foot-btn foot-wide" onClick={() => store.setUi({ dialog: { kind: "oneNoteImport" } })} title="Import notebooks from OneNote on this computer">
+            <Icon.notebook /> Import from OneNote
+          </button>
+        )}
+        <button className="foot-btn" onClick={() => fileInput.current?.click()} title="Import .one sections or a Notecraft export">
           <Icon.import /> Import .one
         </button>
         <button className="foot-btn" onClick={exportNotebook} title="Download this notebook as Notecraft JSON">

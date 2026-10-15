@@ -9,10 +9,14 @@ handles its page canvas.
 | [`notecraft/`](notecraft/) | The app: React + Vite, also packaged as a desktop app. See its README for features and the OneNote parity checklist. |
 | [`onenote-re/`](onenote-re/) | The research it's built on: a TypeScript `.one` parser, the reconstructed pan/zoom canvas, and format and behaviour notes. |
 
+**Download:** installers for macOS, Windows and Linux are on the
+[Releases page](https://github.com/joshmaster2165/Notecraft/releases).
+
 ```bash
 cd notecraft
 npm install
-npm run dev
+npm run dev       # web
+npm run desktop   # desktop app
 ```
 
 ## About the reverse engineering

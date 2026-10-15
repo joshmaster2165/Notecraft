@@ -2,7 +2,8 @@
 import type { Element, Id, Library, ListRef, Page, Run } from "../model/types.ts";
 import { LAYOUT } from "../model/types.ts";
 import * as ops from "../model/ops.ts";
-import { importOneFile, type ImportResult } from "../model/importOne.ts";
+import { importNotebookJson, importOneFile, type ImportResult } from "../model/importOne.ts";
+import { desktop, type FoundSection } from "../desktop.ts";
 import { listMarkers } from "../model/lists.ts";
 import { tagLabel } from "../model/tags.ts";
 import { migrateLibrary } from "../model/migrate.ts";
@@ -359,4 +360,65 @@ export function exportPageMarkdown() {
 
 export function isEmptyParagraph(e: Element): boolean {
   return e.kind === "text" && textLength(e.runs) === 0;
+}
+
+// --- desktop: import OneNote notebooks from this computer ---------------------------------
+
+export interface OneNoteImportProgress {
+  done: number;
+  total: number;
+  current?: string;
+}
+
+/**
+ * Import whole OneNote notebooks found on disk (desktop app only). Each OneNote
+ * notebook becomes a Notecraft notebook; pages keep their OneNote history, and
+ * pictures come from OneNote's cache where it has them.
+ */
+export async function importOneNoteNotebooks(
+  picks: { notebook: string; sections: FoundSection[] }[],
+  onProgress: (p: OneNoteImportProgress) => void,
+): Promise<void> {
+  if (!desktop) return;
+  const total = picks.reduce((n, p) => n + p.sections.length, 0);
+  let done = 0;
+  let pages = 0;
+  let pictures = 0;
+  let missing = 0;
+  let history = 0;
+  const failures: string[] = [];
+  let firstSection: Id | undefined;
+  for (const pick of picks) {
+    const results: ImportResult[] = [];
+    for (const s of pick.sections) {
+      onProgress({ done, total, current: `${pick.notebook} › ${s.name}` });
+      try {
+        const { json, assets, fileName } = await desktop.parseOneNote(s.path);
+        results.push(importNotebookJson(json, fileName, new Map(Object.entries(assets))));
+      } catch (e) {
+        failures.push(`${s.name}: ${(e as Error).message}`);
+      }
+      done++;
+    }
+    if (!results.length) continue;
+    store.edit((d) => {
+      const nb = ops.createNotebook(d, pick.notebook);
+      nb.sections = results.map((r) => r.section);
+    });
+    firstSection ??= results[0]!.section.id;
+    for (const r of results) {
+      pages += r.stats.pages;
+      pictures += r.stats.images - r.stats.imagesWithoutData;
+      missing += r.stats.imagesWithoutData;
+    }
+    history += await addImportedVersions(results.flatMap((r) => r.versions)).catch(() => 0);
+  }
+  onProgress({ done, total });
+  if (firstSection) selectSection(firstSection);
+  store.toast(
+    `Imported ${pages} page${pages === 1 ? "" : "s"} with ${history} earlier version${history === 1 ? "" : "s"}` +
+      (pictures + missing ? ` · ${pictures} of ${pictures + missing} pictures found in OneNote's cache` : "") +
+      (failures.length ? ` · ${failures.length} section${failures.length === 1 ? "" : "s"} failed` : ""),
+  );
+  if (failures.length) console.error("Notecraft: OneNote import failures", failures);
 }
