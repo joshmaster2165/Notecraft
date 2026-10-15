@@ -1,0 +1,19 @@
+# dependencies and builds
+node_modules/
+dist/
+release/
+out/
+*.tsbuildinfo
+.DS_Store
+
+# local tooling
+.claude/
+
+# REA evidence bundles: raw decompiler output of Microsoft's binary plus local
+# machine paths. Kept on the analysis machine only; docs cite their Evidence IDs.
+onenote-re/docs/evidence/
+
+# generated
+onenote-re/canvas/demo/app.js
+*.json.out
+notecraft/public/_tmp*

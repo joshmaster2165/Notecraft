@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OneNote Canvas</title>
+    <style>
+      :root { --bg: #f7f7f8; --fg: #1a202c; --muted: #718096; --line: #e2e8f0; --canvas: #e9ebee; --accent: #6b46c1; color-scheme: light; }
+      @media (prefers-color-scheme: dark) {
+        :root { --bg: #1a1b1e; --fg: #e2e8f0; --muted: #a0aec0; --line: #2d3748; --canvas: #111214; --accent: #b794f4; color-scheme: dark; }
+      }
+      html, body { margin: 0; height: 100%; background: var(--bg); }
+      button { font: inherit; min-width: 28px; padding: 2px 8px; }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script src="./app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,3 @@
+node_modules/
+canvas/demo/app.js
+*.json.out
