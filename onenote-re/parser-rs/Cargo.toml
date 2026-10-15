@@ -1,0 +1,35 @@
+[package]
+name = "onenote-re"
+version = "0.2.0"
+edition = "2021"
+description = "Reader for OneNote revision-store files (.one sections, .onetoc2 notebooks): a Rust port of onenote-re/parser"
+repository = "https://github.com/joshmaster2165/Notecraft"
+publish = false
+
+[lib]
+name = "onenote_re"
+crate-type = ["rlib", "cdylib"]
+
+[[bin]]
+name = "onenote-parse"
+path = "src/bin/onenote-parse.rs"
+
+[features]
+default = []
+# wasm-bindgen exports (src/wasm.rs). Build with:
+#   cargo build -p onenote-re --lib --release --target wasm32-unknown-unknown --features wasm
+wasm = ["dep:wasm-bindgen", "dep:serde-wasm-bindgen", "dep:js-sys"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Pinned: wasm-bindgen-cli must be the same version.
+wasm-bindgen = { version = "=0.2.129", optional = true }
+serde-wasm-bindgen = { version = "0.6", optional = true }
+js-sys = { version = "0.3", optional = true }
+
+# The cache resolver (SHA-1 matching) and the CLI's --assets naming (SHA-256)
+# only exist off-wasm.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+sha1 = "0.11"
+sha2 = "0.11"

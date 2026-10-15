@@ -1,54 +1,58 @@
-// IndexedDB storage for page versions. Snapshots are stored outside the
-// library; image data URLs are moved into a shared blob store so repeated
-// snapshots of a page with pictures keep one copy of each picture.
-import type { Element, Id, Page, PageVersion, VersionReason } from "../model/types.ts";
-import { MAX_VERSIONS_PER_PAGE, hashString, pageSignature, pruneIds } from "../model/versions.ts";
+// Page versions, stored outside the library: in the library folder's
+// versions/ (desktop) or in IndexedDB (browser). Image data URLs become blob
+// references so repeated snapshots of a page keep one copy of each picture.
+import type { Id, Page, PageVersion, VersionReason } from "../model/types.ts";
+import { MAX_VERSIONS_PER_PAGE, pageSignature, pruneIds } from "../model/versions.ts";
 import { batch, get, getAllByIndex } from "../lib/idb.ts";
 import { newId, nowIso } from "../lib/id.ts";
 import { migratePage } from "../model/migrate.ts";
+import { blobRefs, extractBlobs, hydrateBlobs } from "../lib/blobs.ts";
+import { desktop } from "../desktop.ts";
 
 interface StoredVersion extends PageVersion {
   sig: string;
 }
 
-const BLOB_PREFIX = "notecraft-blob:";
+// --- backends ---------------------------------------------------------------------------
 
-// --- image blob extraction ------------------------------------------------------------
-
-function mapImageSources(page: Page, fn: (src: string) => string): Page {
-  const mapSrc = <T extends { src?: string }>(o: T): T => (o.src ? { ...o, src: fn(o.src) } : o);
-  const mapEls = (els: Element[]): Element[] =>
-    els.map((e) => {
-      if (e.kind === "image") return { ...e, image: mapSrc(e.image) };
-      if (e.kind === "file") return mapSrc(e);
-      if (e.kind === "table") return { ...e, rows: e.rows.map((r) => ({ ...r, cells: r.cells.map((c) => ({ ...c, elements: mapEls(c.elements) })) })) };
-      return e;
-    });
-  return { ...page, outlines: page.outlines.map((o) => ({ ...o, elements: mapEls(o.elements) })), images: page.images.map(mapSrc) };
+interface Backend {
+  list(pageId: Id): Promise<StoredVersion[]>;
+  /** With pictures as data URLs. */
+  load(id: Id): Promise<StoredVersion | undefined>;
+  commit(put: StoredVersion[], drop: Id[], blobs: Map<string, string>): Promise<void>;
 }
 
-function extractBlobs(page: Page): { page: Page; blobs: Map<string, string> } {
-  const blobs = new Map<string, string>();
-  const out = mapImageSources(page, (src) => {
-    if (!src.startsWith("data:")) return src;
-    const key = `${hashString(src)}-${src.length.toString(36)}`;
-    blobs.set(key, src);
-    return BLOB_PREFIX + key;
-  });
-  return { page: out, blobs };
-}
+const indexedDbBackend: Backend = {
+  list: (pageId) => getAllByIndex<StoredVersion>("versions", "pageId", pageId),
+  async load(id) {
+    const v = await get<StoredVersion>("versions", id);
+    if (!v) return undefined;
+    const found = new Map<string, string>();
+    await Promise.all(
+      [...blobRefs(v.page)].map(async (k) => {
+        const url = await get<string>("blobs", k);
+        if (url) found.set(k, url);
+      }),
+    );
+    return { ...v, page: hydrateBlobs(v.page, (k) => found.get(k)) };
+  },
+  commit: (put, drop, blobs) =>
+    batch(["versions", "blobs"], (tx) => {
+      const vs = tx.objectStore("versions");
+      put.forEach((r) => vs.put(r));
+      drop.forEach((id) => vs.delete(id));
+      const bs = tx.objectStore("blobs");
+      blobs.forEach((url, k) => bs.put(url, k));
+    }),
+};
 
-async function hydrate(page: Page): Promise<Page> {
-  const keys = new Set<string>();
-  mapImageSources(page, (src) => (src.startsWith(BLOB_PREFIX) && keys.add(src.slice(BLOB_PREFIX.length)), src));
-  if (!keys.size) return page;
-  const found = new Map<string, string>();
-  await Promise.all([...keys].map(async (k) => {
-    const v = await get<string>("blobs", k);
-    if (v) found.set(k, v);
-  }));
-  return mapImageSources(page, (src) => (src.startsWith(BLOB_PREFIX) ? found.get(src.slice(BLOB_PREFIX.length)) ?? "" : src));
-}
+const diskBackend = (lib: NonNullable<typeof desktop>["library"]): Backend => ({
+  list: (pageId) => lib.listVersions<StoredVersion>(pageId),
+  load: async (id) => (await lib.getVersion<StoredVersion>(id)) ?? undefined,
+  commit: (put, drop, blobs) => lib.commitVersions({ put, delete: drop, blobs: Object.fromEntries(blobs) }),
+});
+
+const backend: Backend = desktop ? diskBackend(desktop.library) : indexedDbBackend;
 
 // --- change notifications --------------------------------------------------------------
 
@@ -63,13 +67,13 @@ const notify = (pageId: Id) => listeners.forEach((l) => l(pageId));
 
 /** Newest first. Pages keep image references; use loadVersion() for a renderable copy. */
 export async function listVersions(pageId: Id): Promise<PageVersion[]> {
-  const all = await getAllByIndex<StoredVersion>("versions", "pageId", pageId);
+  const all = await backend.list(pageId);
   return all.sort((a, b) => b.at.localeCompare(a.at));
 }
 
 export async function loadVersion(id: Id): Promise<PageVersion | undefined> {
-  const v = await get<StoredVersion>("versions", id);
-  return v ? { ...v, page: migratePage(await hydrate(v.page)) } : undefined;
+  const v = await backend.load(id);
+  return v ? { ...v, page: migratePage(v.page) } : undefined;
 }
 
 // --- writes -------------------------------------------------------------------------------
@@ -95,17 +99,12 @@ export function saveSnapshot(pageId: Id, page: Page, reason: VersionReason): Pro
       if (newest) latestSig.set(pageId, newest.sig);
     }
     if (latestSig.get(pageId) === sig) return null;
-    const { page: stripped, blobs } = extractBlobs(page);
+    const blobs = new Map<string, string>();
+    const stripped = extractBlobs(page, blobs);
     const record: StoredVersion = { id: newId("v"), pageId, at: nowIso(), author: "You", source: "notecraft", reason, page: stripped, sig };
     existing ??= (await listVersions(pageId)) as StoredVersion[];
     const drop = pruneIds([...existing, record], MAX_VERSIONS_PER_PAGE);
-    await batch(["versions", "blobs"], (tx) => {
-      const vs = tx.objectStore("versions");
-      vs.put(record);
-      for (const id of drop) vs.delete(id);
-      const bs = tx.objectStore("blobs");
-      for (const [k, v] of blobs) bs.put(v, k);
-    });
+    await backend.commit([record], drop, blobs);
     latestSig.set(pageId, sig);
     notify(pageId);
     return record;
@@ -115,19 +114,9 @@ export function saveSnapshot(pageId: Id, page: Page, reason: VersionReason): Pro
 /** Store OneNote's own page versions brought in by a .one import. */
 export async function addImportedVersions(versions: Omit<PageVersion, "id">[]): Promise<number> {
   if (!versions.length) return 0;
-  const records: StoredVersion[] = [];
   const blobs = new Map<string, string>();
-  for (const v of versions) {
-    const { page, blobs: b } = extractBlobs(v.page);
-    b.forEach((val, k) => blobs.set(k, val));
-    records.push({ ...v, id: newId("v"), page, sig: pageSignature(v.page) });
-  }
-  await batch(["versions", "blobs"], (tx) => {
-    const vs = tx.objectStore("versions");
-    records.forEach((r) => vs.put(r));
-    const bs = tx.objectStore("blobs");
-    blobs.forEach((val, k) => bs.put(val, k));
-  });
+  const records: StoredVersion[] = versions.map((v) => ({ ...v, id: newId("v"), page: extractBlobs(v.page, blobs), sig: pageSignature(v.page) }));
+  await backend.commit(records, [], blobs);
   new Set(records.map((r) => r.pageId)).forEach(notify);
   return records.length;
 }

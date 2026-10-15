@@ -26,8 +26,8 @@ export interface DrawState {
   shape: ShapeKind;
 }
 
-export type SidePanel = "versions" | "tags" | null;
-export type Dialog = { kind: "movePage"; pageId: Id } | { kind: "moveSection"; sectionId: Id } | { kind: "moveGroup"; groupId: Id } | { kind: "templates" } | { kind: "trash" } | { kind: "oneNoteImport" } | { kind: "customTags" } | PromptDialog | null;
+export type SidePanel = "versions" | "tags" | "assistant" | null;
+export type Dialog = { kind: "movePage"; pageId: Id } | { kind: "moveSection"; sectionId: Id } | { kind: "moveGroup"; groupId: Id } | { kind: "templates" } | { kind: "trash" } | { kind: "oneNoteImport" } | { kind: "customTags" } | { kind: "settings"; tab?: "ai" | "agents" | "library" } | { kind: "generate"; media: "image" | "video" } | PromptDialog | null;
 export interface PromptDialog {
   kind: "prompt";
   title: string;
@@ -43,6 +43,8 @@ export interface UiState {
   focus: FocusRequest | null;
   active: ActiveParagraph | null;
   searchOpen: boolean;
+  /** Text to start the search panel with (e.g. a search an agent asked to show). */
+  searchQuery?: string;
   /** Right-hand pane: page versions or the Find Tags summary. */
   sidePanel: SidePanel;
   /** Draw tab tool; "type" is normal editing. */

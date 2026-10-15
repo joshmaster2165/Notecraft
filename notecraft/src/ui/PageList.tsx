@@ -5,6 +5,7 @@ import { store, useStore } from "../store/store.ts";
 import { deletePage, newPage, selectPage } from "../store/actions.ts";
 import { copyPageLink } from "../store/links.ts";
 import { Icon } from "./icons.tsx";
+import { desktop } from "../desktop.ts";
 
 const short = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" });
 
@@ -20,6 +21,7 @@ export function PageList() {
 
   return (
     <aside className="pagelist" aria-label={`Pages in ${section.name}`}>
+      {desktop && <div className="drag-strip" data-tauri-drag-region />}
       <header className="pagelist-head">
         <span className="section-tab" style={{ background: section.color }} />
         <h2 title={section.source ? `Imported from ${section.source.file}` : undefined}>{section.name}</h2>

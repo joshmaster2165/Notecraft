@@ -1,13 +1,19 @@
 # onenote-re
 
-Two pieces rebuilt from OneNote for Mac 16.114, located with REA + Ghidra on
+Pieces rebuilt from OneNote for Mac 16.114, located with REA + Ghidra on
 the shipped arm64 binary:
 
-1. **`parser/`**: a dependency-free TypeScript parser that turns a `.one`
-   section into a JSON tree of pages and blocks. [docs/file-format.md](docs/file-format.md)
-   describes the format and maps each part to the OneNote functions that read
-   or write it.
-2. **`canvas/`**: `<OneNoteCanvas>`, an isolated React pan/zoom surface that
+1. **`parser-rs/`**: the `.one` / `.onetoc2` parser in Rust: sections, pages,
+   rich text, tables, pictures, ink, note tags, page history and notebook
+   tables of contents, as JSON. Notecraft's desktop app runs it natively and
+   its web build as WebAssembly (`--features wasm`). No unsafe code; every read
+   is bounds-checked.
+2. **`parser/`**: the TypeScript reference parser it was ported from. Both
+   produce byte-identical JSON; `parser-rs/tests/differential.mjs` checks this
+   on real files, fuzzed copies and generated files with ink, attachments and
+   `.onetoc2`. [docs/file-format.md](docs/file-format.md) describes the format
+   and maps each part to the OneNote functions that read or write it.
+3. **`canvas/`**: `<OneNoteCanvas>`, an isolated React pan/zoom surface that
    reproduces OneNote's trackpad scroll and pinch handling with one CSS
    transform. The recovered algorithm is in [docs/canvas.md](docs/canvas.md).
 
@@ -20,7 +26,11 @@ npm install
 ## Parser
 
 ```bash
-npm run parse -- "path/to/Section.one" --out section.json
+cargo run -p onenote-re --release --bin onenote-parse -- "path/to/Section.one" > section.json
+cargo test -p onenote-re
+node parser-rs/tests/differential.mjs "<folder of .one files>" --wasm   # Rust vs TypeScript
+
+npm run parse -- "path/to/Section.one" --out section.json             # the TypeScript reference
 ```
 
 Options:

@@ -128,6 +128,9 @@ function Stroke({ s, hidden, offset }: { s: InkStroke; hidden?: boolean; offset?
   );
 }
 
+/** The current lasso selection, read by Draw › Ink to Text. */
+export const inkSelection: { pageId: string | null; ids: string[] } = { pageId: null, ids: [] };
+
 export const InkLayer = memo(function InkLayer({ page, readOnly }: { page: Page; readOnly: boolean }) {
   const draw = useStore((s) => s.ui.draw);
   const active = !readOnly && draw.tool !== "type";
@@ -150,6 +153,10 @@ export const InkLayer = memo(function InkLayer({ page, readOnly }: { page: Page;
 
   // Leaving the lasso (or the page) drops the selection.
   useEffect(() => setSelected(new Set()), [draw.tool, page.id]);
+  useEffect(() => {
+    inkSelection.pageId = page.id;
+    inkSelection.ids = [...selected];
+  }, [selected, page.id]);
   useEffect(() => {
     if (!selected.size) return;
     const onKey = (e: KeyboardEvent) => {

@@ -1802,7 +1802,7 @@ kbd {
   color: #1d1f23;
 }
 
-/* ---- desktop app (Electron) --------------------------------------------------------------- */
+/* ---- desktop app (Tauri) ------------------------------------------------------------------ */
 
 .foot-wide {
   grid-column: 1 / -1;
@@ -1811,36 +1811,24 @@ kbd {
 [data-desktop="darwin"] .sidebar {
   padding-top: 30px;
 }
-[data-desktop="darwin"] .sidebar::before,
-[data-desktop="darwin"] .pagelist::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  height: 30px;
-  -webkit-app-region: drag;
-}
 [data-desktop="darwin"] .sidebar,
 [data-desktop="darwin"] .pagelist {
   position: relative;
 }
-[data-desktop="darwin"] .sidebar::before {
-  left: 0;
-  width: 100%;
-}
 [data-desktop="darwin"] .pagelist {
   padding-top: 30px;
 }
-[data-desktop="darwin"] .pagelist::before {
+/* The strip above the sidebar and page list moves the window (data-tauri-drag-region). */
+.drag-strip {
+  position: absolute;
+  top: 0;
   left: 0;
   width: 100%;
+  height: 30px;
+  z-index: 2;
 }
 [data-desktop="darwin"] .ribbon-tabs {
   padding-top: 8px;
-  -webkit-app-region: drag;
-}
-[data-desktop="darwin"] .ribbon-tabs button,
-[data-desktop="darwin"] .ribbon-tabs .tb-menu {
-  -webkit-app-region: no-drag;
 }
 [data-desktop="darwin"] .app.is-full-page .ribbon-tabs {
   padding-left: 80px;
@@ -1975,4 +1963,234 @@ kbd {
 .audio-chip audio {
   height: 30px;
   max-width: 260px;
+}
+
+/* ---- AI: assistant panel, settings, generated media ---------------------------------- */
+
+.assistant-panel {
+  width: 340px;
+}
+.assist-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 12px 14px;
+  overflow: auto;
+  min-height: 0;
+}
+.assist-using {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.assist-scope {
+  padding: 0;
+  flex-wrap: wrap;
+}
+.assist-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.assist-actions .btn,
+.assist-card-actions .btn {
+  font-size: 12px;
+  padding: 4px 9px;
+}
+.assist-ask {
+  display: flex;
+  gap: 6px;
+  align-items: flex-end;
+}
+.assist-ask textarea,
+.prompt-field textarea,
+.prompt-field select,
+.settings-table select,
+.settings-table input,
+.provider-row input {
+  flex: 1;
+  font: 13px var(--font-ui);
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--text);
+  resize: vertical;
+  min-width: 0;
+}
+.assist-results {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.assist-card {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 9px 10px;
+  background: var(--paper);
+}
+.assist-card.is-error {
+  border-color: color-mix(in srgb, #c2464f 50%, var(--line));
+}
+.assist-card h3 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+.assist-text {
+  white-space: normal;
+  font: 13px/1.45 var(--font-note);
+  color: var(--ink);
+  max-height: 320px;
+  overflow: auto;
+}
+.assist-error {
+  margin: 0;
+  font-size: 12.5px;
+  color: #c2464f;
+}
+.assist-busy {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.assist-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.spinner {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.link-btn {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+}
+.link-btn:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+.settings-tabs {
+  padding: 0 0 12px;
+}
+.settings-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.settings-table th {
+  text-align: left;
+  font-weight: 500;
+  padding: 5px 8px 5px 0;
+  white-space: nowrap;
+  color: var(--text);
+}
+.settings-table td {
+  padding: 4px 4px;
+}
+.settings-table td select,
+.settings-table td input {
+  width: 100%;
+}
+.settings-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0;
+}
+.settings-h {
+  margin: 16px 0 6px;
+  font-size: 13px;
+}
+.provider-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 0;
+  border-top: 1px solid var(--line);
+}
+.provider-row .menu-meta {
+  margin: 2px 0 0;
+}
+.provider-key {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.key-state {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--chrome-2);
+  color: var(--muted);
+  margin-left: 6px;
+}
+.key-state.is-set {
+  background: color-mix(in srgb, #5b8c5a 18%, transparent);
+  color: #3f7a3e;
+}
+.code-block {
+  font: 12px/1.5 var(--font-mono);
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 9px 10px;
+  margin: 6px 0;
+  overflow: auto;
+  white-space: pre;
+  color: var(--text);
+}
+.video-chip {
+  margin: 4px 0;
+  display: inline-flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 100%;
+}
+.video-chip video {
+  width: min(480px, 100%);
+  border-radius: 8px;
+  background: #000;
+}
+.video-chip figcaption {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font: 12px var(--font-ui);
+  color: var(--muted);
+}
+.md-line {
+  position: relative;
+  margin: 0 0 3px;
+}
+.md-line.md-h1,
+.md-line.md-h2,
+.md-line.md-h3 {
+  margin-top: 4px;
+  color: var(--h2);
+}
+.md-marker {
+  position: absolute;
+  margin-left: -16px;
+  color: var(--muted);
 }

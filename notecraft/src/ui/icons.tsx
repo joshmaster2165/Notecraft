@@ -66,6 +66,11 @@ export const Icon = {
   shapes: (p: P) => <svg {...base(p)}><rect x="3" y="10" width="7" height="7" rx="1" /><circle cx="13.5" cy="6.5" r="3.5" /><path d="M11 17l6-6" /></svg>,
   lasso: (p: P) => <svg {...base(p)}><ellipse cx="10" cy="8" rx="6.5" ry="4.5" strokeDasharray="2.5 2" /><path d="M6 12c-1 2 0 4 2 4" /></svg>,
   check: (p: P) => <svg {...base(p)}><path d="m5 10.5 3 3 7-7" /></svg>,
+  sparkle: (p: P) => <svg {...base(p)}><path d="M9 2.5 10.6 7 15 8.5 10.6 10 9 14.5 7.4 10 3 8.5 7.4 7z" /><path d="M15 12.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z" /></svg>,
+  gear: (p: P) => <svg {...base(p)}><circle cx="10" cy="10" r="2.6" /><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4" /></svg>,
+  video: (p: P) => <svg {...base(p)}><rect x="2.5" y="5" width="11" height="10" rx="2" /><path d="m13.5 9 4-2.5v7l-4-2.5" /></svg>,
+  wand: (p: P) => <svg {...base(p)}><path d="m3 17 9.5-9.5M11 6l3 3" /><path d="M14 2.5v2M17.5 6h-2M16.5 3.5l-1.4 1.4" /></svg>,
+  text: (p: P) => <svg {...base(p)}><path d="M4 5h12M10 5v11M7 16h6" /></svg>,
 };
 
 export function Logo({ size = 26 }: { size?: number }) {

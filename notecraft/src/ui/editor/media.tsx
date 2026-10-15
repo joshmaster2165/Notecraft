@@ -8,6 +8,9 @@ import { dragPointer } from "../canvasApi.ts";
 import { Icon } from "../icons.tsx";
 import { useReadOnly } from "./readOnly.ts";
 import { askText } from "../prompt.ts";
+import { desktop } from "../../desktop.ts";
+import { download } from "../../store/actions.ts";
+import { pictureText, transcribeRecording } from "../../ai/features.ts";
 import { rotateDataUrl } from "../../lib/image.ts";
 
 function ImageBody({ image, width, height }: { image: ImageData; width: number; height: number }) {
@@ -41,6 +44,22 @@ function ImageTools({ image, update }: { image: ImageData; update: (patch: Parti
         }}
       >
         Alt text
+      </button>
+      <button
+        title="Recognize the text in this picture (AI) so search finds it"
+        onClick={async () => {
+          if (!image.src) return store.toast("This picture's data wasn't stored in the imported file.");
+          store.toast("Reading the picture…");
+          try {
+            const text = await pictureText(image.src);
+            update({ ocrText: text || undefined });
+            store.toast(text ? `Found ${text.split(/\s+/).length} words; search now finds them.` : "No text in this picture.");
+          } catch (e) {
+            store.toast((e as Error).message ?? String(e));
+          }
+        }}
+      >
+        Text
       </button>
       <button title="Rotate left" aria-label="Rotate left" onClick={() => void rotate(-1)}>⟲</button>
       <button title="Rotate right" aria-label="Rotate right" onClick={() => void rotate(1)}>⟳</button>
@@ -139,18 +158,59 @@ export const FloatingImageView = memo(function FloatingImageView({ pageId, img }
   );
 });
 
+/** The desktop WebView can't download; save through the app instead. */
+function saveAttachment(e: MouseEvent<HTMLAnchorElement>, el: FileEl) {
+  if (!desktop || !el.src) return;
+  e.preventDefault();
+  void download(el.name, el.src);
+}
+
 const AUDIO = /\.(webm|m4a|mp3|ogg|oga|wav|aac|wma)$/i;
 
-export function FileChip({ el }: { el: FileEl }) {
+const VIDEO = /\.(mp4|mov|m4v)$/i;
+
+export function FileChip({ el, listRef }: { el: FileEl; listRef?: ListRef }) {
+  const readOnly = useReadOnly();
+  const [busy, setBusy] = useState(false);
   const size = el.size ? ` · ${el.size < 1e6 ? `${Math.round(el.size / 1024)} KB` : `${(el.size / 1e6).toFixed(1)} MB`}` : "";
+  if (el.src && VIDEO.test(el.name)) {
+    return (
+      <div className="oe oe-file oe-video" style={{ paddingLeft: el.depth * LAYOUT.indent }}>
+        <figure className="video-chip">
+          <video controls preload="metadata" src={el.src} />
+          <figcaption>
+            <Icon.video width={15} height={15} /> {el.name}
+            <a className="file-meta" href={el.src} download={el.name} onClick={(e) => saveAttachment(e, el)}>Save{size}</a>
+          </figcaption>
+        </figure>
+      </div>
+    );
+  }
   if (el.src && AUDIO.test(el.name)) {
+    const doTranscribe = async () => {
+      if (!listRef || !el.src) return;
+      setBusy(true);
+      try {
+        const n = await transcribeRecording(listRef, el.id, el.src, el.name);
+        store.toast(`Transcribed ${n} line${n === 1 ? "" : "s"}`);
+      } catch (e) {
+        store.toast((e as Error).message ?? String(e));
+      } finally {
+        setBusy(false);
+      }
+    };
     return (
       <div className="oe oe-file oe-audio" style={{ paddingLeft: el.depth * LAYOUT.indent }}>
         <div className="audio-chip">
           <Icon.mic width={16} height={16} />
           <span className="audio-name">{el.name.replace(AUDIO, "")}</span>
           <audio controls preload="metadata" src={el.src} />
-          <a className="file-meta" href={el.src} download={el.name} title="Save the recording">Save{size}</a>
+          {!readOnly && listRef && (
+            <button className="file-meta link-btn" disabled={busy} onClick={() => void doTranscribe()} title="Turn the recording into text (AI)">
+              {busy ? "Transcribing…" : "Transcribe"}
+            </button>
+          )}
+          <a className="file-meta" href={el.src} download={el.name} title="Save the recording" onClick={(e) => saveAttachment(e, el)}>Save{size}</a>
         </div>
       </div>
     );
@@ -158,7 +218,7 @@ export function FileChip({ el }: { el: FileEl }) {
   return (
     <div className="oe oe-file" style={{ paddingLeft: el.depth * LAYOUT.indent }}>
       {el.src ? (
-        <a className="file-chip" href={el.src} download={el.name}>
+        <a className="file-chip" href={el.src} download={el.name} onClick={(e) => saveAttachment(e, el)}>
           <Icon.file width={16} height={16} /> {el.name}
           <span className="file-meta">{size}</span>
         </a>

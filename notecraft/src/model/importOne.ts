@@ -1,6 +1,6 @@
 // .one import: run the reverse-engineered revision-store parser in the browser
 // and map its NotebookJson onto Notecraft's model.
-import { parseOneNote } from "@re/parser/src/notebook.ts";
+import { parseSection } from "./parser.ts";
 import { inkToSvg } from "@re/parser/src/ink.ts";
 import type {
   ContentBlock,
@@ -34,23 +34,9 @@ export interface ImportResult {
 
 const PARAGRAPH_STYLES = new Set(["p", "h1", "h2", "h3", "h4", "h5", "h6", "quote", "code", "cite"]);
 
-function toBase64(bytes: Uint8Array): string {
-  let s = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-  return btoa(s);
-}
-
-/** Parse a .one file in this process and import it. */
-export function importOneFile(bytes: Uint8Array, fileName: string): ImportResult {
-  const assets = new Map<string, string>();
-  const json: NotebookJson = parseOneNote(bytes, {
-    sectionName: fileName,
-    includeVersions: true,
-    onAsset: ({ id, bytes: data, mediaType }) => {
-      assets.set(id, `data:${mediaType};base64,${toBase64(data)}`);
-      return id;
-    },
-  });
+/** Parse a .one file in this process (Rust/WebAssembly parser when built) and import it. */
+export async function importOneFile(bytes: Uint8Array, fileName: string): Promise<ImportResult> {
+  const { json, assets } = await parseSection(bytes, fileName);
   return importNotebookJson(json, fileName, assets);
 }
 

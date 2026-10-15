@@ -1,6 +1,7 @@
-// Local-first persistence: the library lives in IndexedDB (notebooks can be
-// megabytes once .one files are imported); small per-browser preferences and
-// the scroll/zoom cache live in localStorage.
+// Local-first persistence. In the desktop app the library is a folder of
+// files on disk (src-tauri + notecraft-core); in the browser it lives in
+// IndexedDB. Small per-device preferences and the scroll/zoom cache live in
+// localStorage.
 import type { Library } from "../model/types.ts";
 import type { ViewportState } from "@re/canvas/viewport.ts";
 import { seedLibrary } from "../model/seed.ts";
@@ -8,6 +9,8 @@ import { migrateLibrary } from "../model/migrate.ts";
 import { expireTrash } from "../model/ops.ts";
 import { store } from "./store.ts";
 import { get, put, readLegacyLibrary } from "../lib/idb.ts";
+import { desktop } from "../desktop.ts";
+import { libraryChanges, savedStateOf, type SavedState } from "./diskSync.ts";
 
 const KEY = "library";
 
@@ -16,20 +19,81 @@ const KEY = "library";
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
 let pending: Library | null = null;
 
+let diskState: SavedState | null = null;
+let saving: Promise<void> = Promise.resolve();
+
 async function flush() {
-  if (!pending) return;
+  if (!pending) return saving;
   const lib = pending;
   pending = null;
+  saving = saving.then(async () => {
+    try {
+      if (desktop) {
+        const { changes, state, empty } = libraryChanges(diskState, lib);
+        if (!empty) await desktop.library.save(changes);
+        diskState = state;
+      } else await put("kv", lib, KEY);
+      if (!pending) store.setMeta({ saveState: "saved" });
+    } catch (e) {
+      console.error("Notecraft: save failed", e);
+      store.setMeta({ saveState: "error" });
+    }
+  });
+  return saving;
+}
+
+/** Write any unsaved changes now. */
+export function flushLibrary(): Promise<void> {
+  clearTimeout(saveTimer);
+  return flush();
+}
+
+function watchChanges() {
+  store.onLibraryChange = (next) => {
+    pending = next;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => void flush(), 400);
+  };
+  window.addEventListener("pagehide", () => void flush());
+}
+
+/** Desktop: open the library folder, or start one with the welcome notebook. */
+async function loadFromDisk(lib0: NonNullable<typeof desktop>["library"]): Promise<void> {
+  let lib: Library | null = null;
   try {
-    await put("kv", lib, KEY);
-    if (!pending) store.setMeta({ saveState: "saved" });
+    lib = await lib0.load();
   } catch (e) {
-    console.error("Notecraft: save failed", e);
-    store.setMeta({ saveState: "error" });
+    console.error("Notecraft: could not read the library folder", e);
+    store.toast(`Couldn't read your library folder: ${(e as Error).message ?? e}`);
   }
+  const fresh = !lib || lib.version !== 1 || !lib.notebooks?.length;
+  const loaded = fresh ? seedLibrary() : lib!;
+  migrateLibrary(loaded);
+  expireTrash(loaded);
+  store.replaceLibrary(loaded, { resetHistory: true });
+  diskState = fresh ? null : savedStateOf(store.getState().lib);
+  restoreSelection(loaded);
+  store.setMeta({ loaded: true, saveState: "saved" });
+  watchChanges();
+  if (fresh) {
+    pending = store.getState().lib;
+    await flush();
+  }
+  // The CLI, an AI agent or a sync tool changed the folder: save ours, then reload.
+  lib0.onExternalChange(async () => {
+    await flush();
+    const next = await lib0.load().catch(() => null);
+    if (!next?.notebooks?.length) return;
+    migrateLibrary(next);
+    store.replaceLibrary(next, { resetHistory: true });
+    diskState = savedStateOf(store.getState().lib);
+    restoreSelection(next, store.getState().ui);
+    store.toast("Updated with changes made outside Notecraft.");
+  });
 }
 
 export async function loadLibrary(): Promise<void> {
+  if (desktop) return loadFromDisk(desktop.library);
   let lib: Library | undefined;
   try {
     lib = await get<Library>("kv", KEY);
@@ -47,12 +111,7 @@ export async function loadLibrary(): Promise<void> {
   store.replaceLibrary(lib, { resetHistory: true });
   restoreSelection(lib);
   store.setMeta({ loaded: true, saveState: "saved" });
-  store.onLibraryChange = (next) => {
-    pending = next;
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(flush, 400);
-  };
-  window.addEventListener("pagehide", () => void flush());
+  watchChanges();
 }
 
 // --- selection -------------------------------------------------------------------------
@@ -76,8 +135,9 @@ function writeJson(key: string, value: unknown) {
   }
 }
 
-function restoreSelection(lib: Library) {
-  const saved = readJson<{ notebookId: string; sectionId: string; pageId: string; zoomAnchor?: "viewportOrigin" | "pointer" }>(SELECTION_KEY);
+/** Select what was open last (or, after an outside change, what is open now if it still exists). */
+function restoreSelection(lib: Library, current?: { notebookId: string | null; sectionId: string | null; pageId: string | null }) {
+  const saved = current?.pageId ? { ...current, zoomAnchor: store.getState().ui.zoomAnchor } : readJson<{ notebookId: string; sectionId: string; pageId: string; zoomAnchor?: "viewportOrigin" | "pointer" }>(SELECTION_KEY);
   const nb = lib.notebooks.find((n) => n.id === saved?.notebookId) ?? lib.notebooks[0]!;
   const section = nb.sections.find((s) => s.id === saved?.sectionId) ?? nb.sections[0];
   const page = section?.pages.find((p) => p.id === saved?.pageId) ?? section?.pages[0];

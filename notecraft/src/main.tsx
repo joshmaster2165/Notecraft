@@ -21,6 +21,13 @@ store.subscribe(() => {
 });
 void loadLibrary().then(startVersionTracking);
 
+// Development builds: a handle for automated tests of the desktop app (src-tauri automation_report).
+if (import.meta.env.DEV) {
+  void Promise.all([import("./model/ops.ts"), import("./store/actions.ts"), import("./ai/client.ts"), import("./ai/features.ts"), import("./store/versionStore.ts")]).then(
+    ([ops, actions, ai, features, versions]) => Object.assign(window, { __notecraft: { store, ops, actions, ai, features, versions } }),
+  );
+}
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <App />

@@ -6,7 +6,7 @@ from the binary and file-format analysis in [`../../onenote-re`](../../onenote-r
 
 ✅ done · 🟡 partial · ⬜ not yet · — not applicable to a local-first app
 
-**55 of 67 done**, 4 partial, 7 not yet, 1 not applicable.
+**56 of 67 done**, 3 partial, 7 not yet, 1 not applicable.
 
 ## Organize
 
@@ -22,7 +22,7 @@ from the binary and file-format analysis in [`../../onenote-re`](../../onenote-r
 | Page Templates (built-in + Save as Template) | ✅ | 7 built-ins plus your own |
 | Page Versions | ✅ | Notecraft snapshots plus OneNote's own history on import |
 | Password Protected Section | ⬜ | Detected in imports; not decrypted or created |
-| Sync, sharing, co-authoring | — | Local-first; export/import notebooks as JSON |
+| Sync, sharing, co-authoring | — | Local-first: the library is a folder you can sync with any service |
 
 ## Write
 
@@ -49,12 +49,12 @@ from the binary and file-format analysis in [`../../onenote-re`](../../onenote-r
 | Table borders, shading, sort, column widths, Tab navigation | ✅ | |
 | Pictures: insert, paste, drop, resize, inline or floating | ✅ | |
 | Picture alt text, rotate, crop | 🟡 | Alt text and rotate; no crop |
-| Text in pictures (OCR) searchable | 🟡 | Imported OCR text is searchable; new pictures aren't OCR'd |
+| Text in pictures (OCR) searchable | ✅ | Imported OCR text, and **Text** on any picture (AI vision) |
 | File attachments | ✅ | Up to 25 MB |
 | File printouts | ⬜ | |
 | Insert Date / Time / Date and Time | ✅ | ⌥⇧D, ⌥⇧T, ⌥⇧F |
 | Equations, Ink to Math | ⬜ | |
-| Audio and video recording | 🟡 | Audio recording plays in the page; no video |
+| Audio and video recording | 🟡 | Audio recording with AI transcription; no video recording (AI video generation instead) |
 | Spell check | ✅ | Operating-system spellchecker |
 | Undo / redo | ✅ | App-wide, typing coalesced |
 | Paste with formatting | ✅ | Keeps emphasis, links, colors, headings and lists; ⌥⇧⌘V pastes plain text |
@@ -66,7 +66,7 @@ from the binary and file-format analysis in [`../../onenote-re`](../../onenote-r
 | Pen, highlighter (colors, thickness) | ✅ | Stored in page points, so ink stays on its text at every zoom |
 | Stroke eraser | ✅ | |
 | Lasso select, move ink | ✅ | Drag to move, Delete to remove |
-| Shapes, Ink to Shape, Ink to Text | 🟡 | Line, arrow, rectangle, ellipse; no handwriting recognition yet |
+| Shapes, Ink to Shape, Ink to Text | 🟡 | Shapes; Ink to Text (AI vision). No Ink to Shape |
 | Pressure sensitivity | ⬜ | |
 
 ## View
@@ -109,3 +109,14 @@ from the binary and file-format analysis in [`../../onenote-re`](../../onenote-r
 | Native menus and shortcuts | ✅ | |
 | Code signing / notarization | ⬜ | Builds are ad-hoc signed |
 | Auto-update | ⬜ | |
+
+## Beyond OneNote
+
+| | Notecraft | Notes |
+|---|---|---|
+| Notes as plain files on disk | ✅ | One JSON file per page; pictures as files |
+| AI writing assistant | ✅ | Local models or your own keys; selection, page, section or notebook |
+| Transcribe recordings | ✅ | Timestamped transcript under the recording |
+| Generate pictures and video | ✅ | OpenAI-compatible image APIs; OpenAI video |
+| Agents: CLI, JSON, MCP | ✅ | `notecraft` command and `notecraft mcp` |
+| Small native app | ✅ | Tauri 2 (Rust) with the system web view; the `.one` parser is Rust |

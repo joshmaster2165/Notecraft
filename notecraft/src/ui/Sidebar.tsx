@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type DragEvent } from "react";
 import type { Notebook, Section, SectionGroup } from "../model/types.ts";
 import * as ops from "../model/ops.ts";
 import { store, useStore } from "../store/store.ts";
-import { deleteSection, exportNotebook, importFiles, importNotebookFolder, newNotebook, newSection, newSectionGroup, selectNotebook, selectSection } from "../store/actions.ts";
+import { deleteSection, exportNotebook, importFiles, importNotebookFolder, importOneNoteFolder, newNotebook, newSection, newSectionGroup, selectNotebook, selectSection } from "../store/actions.ts";
 import { Icon, Logo } from "./icons.tsx";
 import { desktop } from "../desktop.ts";
 import { copySectionLink } from "../store/links.ts";
@@ -196,6 +196,7 @@ export function Sidebar() {
 
   return (
     <nav className="sidebar" aria-label="Notebooks">
+      {desktop && <div className="drag-strip" data-tauri-drag-region />}
       <div className="brand">
         <Logo />
         <span className="brand-name">Notecraft</span>
@@ -240,7 +241,7 @@ export function Sidebar() {
             <button onClick={() => (newNotebook(), setPickerOpen(false))}>
               <Icon.plus width={16} height={16} /> New notebook
             </button>
-            <button onClick={() => (folderInput.current?.click(), setPickerOpen(false))} title="A folder with .one sections and its .onetoc2 table of contents">
+            <button onClick={() => (desktop ? void importOneNoteFolder() : folderInput.current?.click(), setPickerOpen(false))} title="A folder with .one sections and its .onetoc2 table of contents">
               <Icon.folder width={16} height={16} /> Open OneNote notebook folder…
             </button>
             {notebook && (

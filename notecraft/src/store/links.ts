@@ -5,6 +5,7 @@ import type { Id, Library, Run } from "../model/types.ts";
 import * as ops from "../model/ops.ts";
 import { normalizeRuns, runsText } from "../lib/richtext.ts";
 import { store } from "./store.ts";
+import { desktop } from "../desktop.ts";
 
 export const PAGE_LINK_PREFIX = "notecraft:page/";
 export const SECTION_LINK_PREFIX = "notecraft:section/";
@@ -32,7 +33,9 @@ export function pageIdFromHref(href: string): Id | null {
 export function followLink(href: string): void {
   const t = parseHref(href);
   if (!t) {
-    if (/^(https?:|mailto:)/i.test(href)) window.open(href, "_blank", "noopener,noreferrer");
+    if (!/^(https?:|mailto:)/i.test(href)) return;
+  if (desktop) void desktop.openExternal(href).catch((e) => store.toast(String(e)));
+  else window.open(href, "_blank", "noopener,noreferrer");
     return;
   }
   const lib = store.getState().lib;

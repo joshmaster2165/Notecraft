@@ -1,0 +1,15 @@
+[package]
+name = "notecraft-core"
+version = "0.2.0"
+edition = "2021"
+description = "Notecraft's library on disk: storage, search and page editing shared by the desktop app, the CLI and the MCP server"
+repository = "https://github.com/joshmaster2165/Notecraft"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+
+[dev-dependencies]
+tempfile = "3"

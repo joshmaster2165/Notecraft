@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { store, useStore } from "../store/store.ts";
-import { importFiles, importNotebookFolder, readDroppedEntries, repairSelection } from "../store/actions.ts";
+import { chooseLibraryFolder, selectPage, selectSection, importFiles, importNotebookFolder, importOneNoteFolder, readDroppedEntries, repairSelection, revealLibrary } from "../store/actions.ts";
 import { Sidebar } from "./Sidebar.tsx";
 import { PageList } from "./PageList.tsx";
 import { Toolbar } from "./Toolbar.tsx";
@@ -8,6 +8,7 @@ import { PageCanvas, useActivePage } from "./PageCanvas.tsx";
 import { SearchPanel } from "./SearchPanel.tsx";
 import { PreviewBanner, VersionsPanel } from "./VersionsPanel.tsx";
 import { TagsPanel } from "./TagsPanel.tsx";
+import { AssistantPanel } from "./AssistantPanel.tsx";
 import { Dialogs } from "./Dialogs.tsx";
 import { FindBar } from "./FindBar.tsx";
 import { canvasApi } from "./canvasApi.ts";
@@ -17,6 +18,12 @@ import * as ops from "../model/ops.ts";
 import { currentPage, exportNotebook, exportPageMarkdown, newNotebook, newPage, newSection, newSectionGroup, printPage } from "../store/actions.ts";
 
 /** Native menu commands (desktop app) mapped onto the same actions as the UI. */
+/** Edit › Paste and Match Style: the clipboard's text, without formatting. */
+async function pastePlainText() {
+  const text = await navigator.clipboard.readText().catch(() => "");
+  if (text) document.execCommand("insertText", false, text);
+}
+
 function useDesktopCommands() {
   useEffect(() => {
     if (!desktop) return;
@@ -31,7 +38,10 @@ function useDesktopCommands() {
       newNotebook: () => newNotebook(),
       importFromOneNote: () => store.setUi({ dialog: { kind: "oneNoteImport" } }),
       importFiles: () => document.querySelector<HTMLInputElement>(".sidebar-foot input[type=file]")?.click(),
-      importFolder: () => document.querySelector<HTMLInputElement>(".sidebar-foot input.folder-input")?.click(),
+      importFolder: () => void importOneNoteFolder(),
+      revealLibrary: () => revealLibrary(),
+      chooseLibrary: () => void chooseLibraryFolder(),
+      pastePlain: () => void pastePlainText(),
       exportNotebook: () => exportNotebook(),
       exportMarkdown: () => exportPageMarkdown(),
       print: () => printPage(),
@@ -53,8 +63,17 @@ function useDesktopCommands() {
       fullPage: () => store.setUi({ fullPage: !ui().fullPage }),
       versions: () => currentPage() && store.setUi({ sidePanel: ui().sidePanel === "versions" ? null : "versions", preview: null }),
       templates: () => store.setUi({ dialog: { kind: "templates" } }),
+      settings: () => store.setUi({ dialog: { kind: "settings" } }),
+      "help:agents": () => store.setUi({ dialog: { kind: "settings", tab: "agents" } }),
     };
-    return desktop.onCommand((cmd) => handlers[cmd]?.());
+    const offCommands = desktop.onCommand((cmd) => handlers[cmd]?.());
+    // An AI agent (MCP) or `notecraft open` asked to show a page or a search.
+    const offControl = desktop.onControl((r) => {
+      if (r.action === "openPage" && r.pageId) selectPage(r.pageId);
+      else if (r.action === "openSection" && r.sectionId) selectSection(r.sectionId);
+      else if (r.action === "search") store.setUi({ searchOpen: true, searchQuery: r.query ?? "" });
+    });
+    return () => (offCommands(), offControl());
   }, []);
 }
 
@@ -186,6 +205,7 @@ export function App() {
           )}
           {sidePanel === "versions" && page && <VersionsPanel page={page} />}
           {sidePanel === "tags" && <TagsPanel />}
+          {sidePanel === "assistant" && <AssistantPanel />}
         </div>
       </main>
       {searchOpen && <SearchPanel />}

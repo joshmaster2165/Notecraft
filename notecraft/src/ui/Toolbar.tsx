@@ -14,10 +14,13 @@ import { canvasApi, useZoom } from "./canvasApi.ts";
 import { promptLink } from "./editor/Paragraph.tsx";
 import { copyPageLink, copyParagraphLink } from "../store/links.ts";
 import { askText } from "./prompt.ts";
+import { inkToText } from "../ai/features.ts";
+import { inkSelection } from "./editor/InkLayer.tsx";
 import { startRecording, stopRecording } from "../store/recorder.ts";
 import { TagIcon } from "./editor/TagIcon.tsx";
 import { FONTS, FONT_COLORS, HIGHLIGHT_COLORS, SIZES, applyStyle, clearStyle, currentFont, exec } from "./format.ts";
 import { Icon } from "./icons.tsx";
+import { desktop } from "../desktop.ts";
 
 const STYLES: { value: ParagraphStyle; label: string }[] = [
   { value: "p", label: "Normal" },
@@ -238,7 +241,7 @@ export function Toolbar() {
 
   return (
     <div className="ribbon">
-      <div className="ribbon-tabs" role="tablist" aria-label="Ribbon">
+      <div className="ribbon-tabs" role="tablist" aria-label="Ribbon" {...(desktop ? { "data-tauri-drag-region": "" } : {})}>
         {tabs.map(([id, label]) => (
           <button key={id} role="tab" aria-selected={tab === id} className={`ribbon-tab${tab === id ? " is-on" : ""}`} onMouseDown={(e) => e.preventDefault()} onClick={() => setTab(id)}>
             {label}
@@ -264,11 +267,13 @@ export function Toolbar() {
 
         <Btn label="Undo" kbd="⌘Z" disabled={!canUndo} onClick={() => store.undo()}><Icon.undo /></Btn>
         <Btn label="Redo" kbd="⇧⌘Z" disabled={!canRedo} onClick={() => store.redo()}><Icon.redo /></Btn>
+        <Btn label="Assistant (AI)" on={sidePanel === "assistant"} onClick={() => store.setUi({ sidePanel: sidePanel === "assistant" ? null : "assistant", preview: null })}><Icon.sparkle /></Btn>
         <Btn label="Find Tags" on={sidePanel === "tags"} onClick={() => store.setUi({ sidePanel: sidePanel === "tags" ? null : "tags", preview: null })}><Icon.todo /></Btn>
         <Btn label="Page versions" on={sidePanel === "versions"} onClick={() => store.setUi({ sidePanel: sidePanel === "versions" ? null : "versions", preview: null })}><Icon.history /></Btn>
         <Menu label="More" button={<Icon.more />}>
           {(close) => (
             <>
+              <button onClick={() => (store.setUi({ dialog: { kind: "settings" } }), close())}>Settings…</button>
               <button onClick={() => (store.setUi({ dialog: { kind: "templates" } }), close())}>Page templates…</button>
               <button disabled={!pageId} onClick={() => (pageId && void copyPageLink(pageId), close())}>Copy link to page</button>
               <button disabled={!pageId || el?.kind !== "text"} onClick={() => (pageId && active && void copyParagraphLink(pageId, active.elementId), close())}>Copy link to paragraph</button>
@@ -436,6 +441,10 @@ export function Toolbar() {
               )}
             </div>
             <div className="tb-group">
+              <Btn label="Generate a picture (AI)" wide disabled={!page} onClick={() => store.setUi({ dialog: { kind: "generate", media: "image" } })}><span className="tb-labeled"><Icon.wand /> Picture</span></Btn>
+              <Btn label="Generate a video (AI)" wide disabled={!page} onClick={() => store.setUi({ dialog: { kind: "generate", media: "video" } })}><span className="tb-labeled"><Icon.video /> Video</span></Btn>
+            </div>
+            <div className="tb-group">
               <Btn label="Insert date" kbd="⌥⇧D" wide onClick={() => insertText(dateStr())}><span className="tb-labeled">Date</span></Btn>
               <Btn label="Insert time" kbd="⌥⇧T" wide onClick={() => insertText(timeStr())}><span className="tb-labeled">Time</span></Btn>
               <Btn label="Insert date and time" kbd="⌥⇧F" wide onClick={() => insertText(`${dateStr()} ${timeStr()}`)}><span className="tb-labeled">Date &amp; Time</span></Btn>
@@ -454,6 +463,7 @@ export function Toolbar() {
               <Btn label="Highlighter" on={draw.tool === "highlighter"} onClick={() => pickTool("highlighter")}><Icon.highlight /></Btn>
               <Btn label="Eraser" on={draw.tool === "eraser"} onClick={() => pickTool("eraser")}><Icon.eraser /></Btn>
               <Btn label="Lasso select" on={draw.tool === "lasso"} onClick={() => pickTool("lasso")}><Icon.lasso /></Btn>
+              <Btn label="Ink to Text (AI): the lassoed ink, or all handwriting on the page" wide disabled={!page?.ink?.length} onClick={() => void runInkToText()}><span className="tb-labeled"><Icon.text /> Ink to Text</span></Btn>
               <Menu label="Shapes" button={<span className={`tb-labeled${draw.tool === "shape" ? " is-on" : ""}`}><Icon.shapes /></span>}>
                 {(close) => SHAPES.map(([v, name, glyph]) => (
                   <button key={v} role="menuitemradio" aria-checked={draw.tool === "shape" && draw.shape === v} onClick={() => (setDraw({ tool: "shape", shape: v }), close())}>
@@ -592,6 +602,19 @@ const DRAW_HINTS: Record<DrawTool, string> = {
   lasso: "Draw a loop around ink to select it, then drag to move or press Delete.",
   shape: "Drag on the page to draw the shape. Pen color and thickness apply.",
 };
+
+async function runInkToText() {
+  const page = currentPage();
+  if (!page) return;
+  const ids = inkSelection.pageId === page.id ? inkSelection.ids : [];
+  store.toast("Reading your handwriting…");
+  try {
+    const text = await inkToText(page.id, ids);
+    store.toast(`Converted: “${text.slice(0, 60)}${text.length > 60 ? "…" : ""}”`);
+  } catch (e) {
+    store.toast((e as Error).message ?? String(e));
+  }
+}
 
 function RecordingClock({ since }: { since: number }) {
   const [now, setNow] = useState(Date.now());

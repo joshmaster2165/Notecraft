@@ -71,7 +71,7 @@ export function SearchPanel() {
   const sectionId = useStore((s) => s.ui.sectionId);
   const [scope, setScopeState] = useState<SearchScope>(lastScope);
   const setScope = (v: SearchScope) => (setScopeState(v), (lastScope = v), input.current?.focus());
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(() => store.getState().ui.searchQuery ?? "");
   const [cursor, setCursor] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   const hits = useMemo(() => search(lib, query, scope, notebookId, sectionId), [lib, query, scope, notebookId, sectionId]);
@@ -79,7 +79,7 @@ export function SearchPanel() {
   useEffect(() => input.current?.focus(), []);
   useEffect(() => setCursor(0), [query, scope]);
 
-  const close = () => store.setUi({ searchOpen: false });
+  const close = () => store.setUi({ searchOpen: false, searchQuery: undefined });
   const open = (h: Hit) => {
     close();
     selectPage(h.page.id);

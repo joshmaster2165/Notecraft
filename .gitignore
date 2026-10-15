@@ -17,3 +17,10 @@ onenote-re/docs/evidence/
 onenote-re/canvas/demo/app.js
 *.json.out
 notecraft/public/_tmp*
+# onenote-re parser as WebAssembly (npm run build:wasm in notecraft/)
+notecraft/src/wasm/
+
+# Rust
+target/
+notecraft/src-tauri/binaries/
+notecraft/src-tauri/gen/

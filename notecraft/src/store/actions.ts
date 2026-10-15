@@ -4,8 +4,9 @@ import { LAYOUT } from "../model/types.ts";
 import * as ops from "../model/ops.ts";
 import { importNotebookJson, importOneFile, type ImportResult } from "../model/importOne.ts";
 import { assembleNotebook, type FolderSection, type FolderToc } from "../model/notebookImport.ts";
-import { parseNotebookToc } from "@re/parser/src/toc.ts";
+import { parseToc } from "../model/parser.ts";
 import { desktop, type FoundSection } from "../desktop.ts";
+import { invoke } from "@tauri-apps/api/core";
 import { listMarkers } from "../model/lists.ts";
 import { tagLabel } from "../model/tags.ts";
 import { migrateLibrary } from "../model/migrate.ts";
@@ -15,7 +16,7 @@ import type { PastedBlock } from "../lib/paste.ts";
 import { pageHref } from "./links.ts";
 import { store } from "./store.ts";
 import { addImportedVersions } from "./versionStore.ts";
-import { persistSelection } from "./persist.ts";
+import { flushLibrary, persistSelection } from "./persist.ts";
 
 const lib = () => store.getState().lib;
 
@@ -181,7 +182,9 @@ export function printPage() {
     window.removeEventListener("afterprint", done);
   };
   window.addEventListener("afterprint", done);
-  setTimeout(() => window.print(), 50);
+  // The desktop web view prints through the app; browsers print themselves.
+  if (desktop) setTimeout(() => void invoke("print_page").catch((e) => store.toast(String(e))).finally(() => setTimeout(done, 1500)), 50);
+  else setTimeout(() => window.print(), 50);
 }
 
 // --- editing helpers used by the canvas ---------------------------------------------
@@ -342,7 +345,7 @@ export async function importFiles(files: File[]) {
   const placed: FolderSection[] = [];
   for (const f of oneFiles) {
     try {
-      const r = importOneFile(new Uint8Array(await f.arrayBuffer()), f.name);
+      const r = await importOneFile(new Uint8Array(await f.arrayBuffer()), f.name);
       results.push(r);
       placed.push({ dir: "", fileName: f.name, section: r.section, colorFromFile: r.colorFromFile });
     } catch (e) {
@@ -354,7 +357,7 @@ export async function importFiles(files: File[]) {
   const tocs: FolderToc[] = [];
   if (tocFile) {
     try {
-      tocs.push({ dir: "", toc: parseNotebookToc(new Uint8Array(await tocFile.arrayBuffer())) });
+      tocs.push({ dir: "", toc: await parseToc(new Uint8Array(await tocFile.arrayBuffer())) });
     } catch (e) {
       console.warn("Notecraft: could not read", tocFile.name, e);
     }
@@ -411,9 +414,9 @@ export async function importNotebookFolder(files: { file: File; path: string }[]
     for (const f of list) {
       try {
         const bytes = new Uint8Array(await f.file.arrayBuffer());
-        if (/\.onetoc2$/i.test(f.name)) tocs.push({ dir: f.dir, toc: parseNotebookToc(bytes) });
+        if (/\.onetoc2$/i.test(f.name)) tocs.push({ dir: f.dir, toc: await parseToc(bytes) });
         else {
-          const r = importOneFile(bytes, f.name);
+          const r = await importOneFile(bytes, f.name);
           results.push(r);
           placed.push({ dir: f.dir, fileName: f.name, section: r.section, colorFromFile: r.colorFromFile });
         }
@@ -480,11 +483,51 @@ async function importLibraryJson(file: File) {
   }
 }
 
-function download(name: string, content: string, type: string) {
-  const url = URL.createObjectURL(new Blob([content], { type }));
+/** Save a file: a save dialog in the desktop app, a download in the browser. `content` is text or a data: URL. */
+export async function download(name: string, content: string, type = "application/octet-stream") {
+  if (desktop) {
+    try {
+      const path = await desktop.saveFile(name, content);
+      if (path) store.toast(`Saved ${path.split(/[\\/]/).pop()}`);
+    } catch (e) {
+      store.toast(`Couldn't save ${name}: ${(e as Error).message ?? e}`);
+    }
+    return;
+  }
+  const url = content.startsWith("data:") ? content : URL.createObjectURL(new Blob([content], { type }));
   const a = Object.assign(document.createElement("a"), { href: url, download: name });
   a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  if (!content.startsWith("data:")) setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Desktop: pick a OneNote notebook folder (or a folder of notebooks) and import it. */
+export async function importOneNoteFolder() {
+  if (!desktop) {
+    document.querySelector<HTMLInputElement>(".sidebar-foot input.folder-input")?.click();
+    return;
+  }
+  const path = await desktop.pickFolder("Choose a OneNote notebook folder");
+  if (!path) return;
+  const found = await desktop.scanFolder(path).catch((e) => (store.toast(String(e)), []));
+  if (!found.length) return store.toast("That folder has no OneNote sections (.one files).");
+  store.toast(`Importing ${found.reduce((n, f) => n + f.sections.length, 0)} sections…`);
+  await importOneNoteNotebooks(found.map((n) => ({ notebook: n.name, sections: n.sections, tocs: n.tocs })), () => {});
+}
+
+/** Desktop: show the library folder in Finder / Explorer. */
+export function revealLibrary() {
+  void desktop?.revealLibrary().catch((e) => store.toast(String(e)));
+}
+
+/** Desktop: keep the library in another folder (e.g. one a sync tool watches). */
+export async function chooseLibraryFolder() {
+  if (!desktop) return;
+  const path = await desktop.pickFolder("Choose a folder for your Notecraft library");
+  if (!path) return;
+  await flushLibrary();
+  const info = await desktop.library.setLocation(path);
+  store.toast(info.exists ? `Opening the library in ${path}` : `Starting a new library in ${path}`);
+  setTimeout(() => location.reload(), 600);
 }
 
 const safeName = (s: string) => s.replace(/[\\/:*?"<>|]+/g, "-").trim() || "untitled";
@@ -492,7 +535,7 @@ const safeName = (s: string) => s.replace(/[\\/:*?"<>|]+/g, "-").trim() || "unti
 export function exportNotebook() {
   const nb = lib().notebooks.find((n) => n.id === store.getState().ui.notebookId);
   if (!nb) return;
-  download(`${safeName(nb.name)}.notecraft.json`, JSON.stringify({ notecraft: 1, notebook: nb }), "application/json");
+  void download(`${safeName(nb.name)}.notecraft.json`, JSON.stringify({ notecraft: 1, notebook: nb }), "application/json");
 }
 
 function runsToMarkdown(runs: Run[]): string {
@@ -532,12 +575,16 @@ function elementsToMarkdown(els: Element[]): string[] {
   });
 }
 
+/** A page as Markdown: title, then its note containers top to bottom. */
+export function pageMarkdown(page: Page): string {
+  const outlines = [...page.outlines].sort((a, b) => a.y - b.y || a.x - b.x);
+  return [`# ${page.title || "Untitled page"}`, "", ...outlines.flatMap((o) => [...elementsToMarkdown(o.elements), ""])].join("\n");
+}
+
 export function exportPageMarkdown() {
   const page = currentPage();
   if (!page) return;
-  const outlines = [...page.outlines].sort((a, b) => a.y - b.y || a.x - b.x);
-  const md = [`# ${page.title || "Untitled page"}`, "", ...outlines.flatMap((o) => [...elementsToMarkdown(o.elements), ""])].join("\n");
-  download(`${safeName(page.title || "page")}.md`, md, "text/markdown");
+  void download(`${safeName(page.title || "page")}.md`, pageMarkdown(page), "text/markdown");
 }
 
 export function isEmptyParagraph(e: Element): boolean {

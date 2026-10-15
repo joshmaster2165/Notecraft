@@ -1,0 +1,14 @@
+# Rust workspace: the .one parser and the Notecraft desktop app, core library and CLI.
+[workspace]
+resolver = "2"
+members = ["onenote-re/parser-rs", "notecraft/crates/core", "notecraft/crates/cli", "notecraft/src-tauri"]
+
+[workspace.package]
+edition = "2021"
+repository = "https://github.com/joshmaster2165/Notecraft"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = "s"
+strip = true

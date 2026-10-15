@@ -5,16 +5,20 @@ behaviour comes from the static analysis of OneNote for Mac 16.114 in
 [`../onenote-re`](../onenote-re). See **[docs/PARITY.md](docs/PARITY.md)** for
 the feature-by-feature OneNote checklist.
 
+| Part | What it is |
+|---|---|
+| `src/` | The app: React 19 + Vite. Runs in the browser and inside the desktop app. |
+| [`src-tauri/`](src-tauri) | The desktop app (Tauri 2, Rust): window and menus, the library folder, OneNote import, keychain and AI requests. |
+| [`crates/core/`](crates/core) | `notecraft-core`: the library-folder format, search and editing, shared by the app, the CLI and the MCP server. |
+| [`crates/cli/`](crates/cli) | `notecraft`: the command line and MCP server for scripts and AI agents. |
+| [`../onenote-re/parser-rs`](../onenote-re/parser-rs) | The `.one` / `.onetoc2` parser in Rust; the desktop app runs it natively, the browser as WebAssembly. |
+
 ## Download
 
 Installers are attached to each [GitHub Release](https://github.com/joshmaster2165/Notecraft/releases):
-
-| Platform | File |
-|---|---|
-| macOS (Apple Silicon) | `Notecraft-<version>-mac-arm64.dmg` |
-| macOS (Intel) | `Notecraft-<version>-mac-x64.dmg` |
-| Windows | `Notecraft-<version>-win-x64.exe` |
-| Linux | `.AppImage` or `.deb` |
+`.dmg` for macOS (Apple Silicon and Intel), `.msi` / `-setup.exe` for Windows,
+`.AppImage`, `.deb` and `.rpm` for Linux, plus `notecraft-cli-<platform>`, the
+command-line tool on its own.
 
 The macOS app is ad-hoc signed, not notarized. The first time, right-click
 Notecraft in Applications and choose **Open**, or run
@@ -22,36 +26,87 @@ Notecraft in Applications and choose **Open**, or run
 
 In the desktop app, **File › Import from OneNote on This Computer** finds the
 notebooks OneNote keeps on your machine and imports each one, with its page
-history and any pictures in OneNote's cache. macOS asks once whether
-Notecraft may read another app's data.
+history and any pictures in OneNote's cache. **File › Open OneNote Notebook
+Folder…** imports a notebook folder with its section groups and `.onetoc2`
+order. macOS asks once whether Notecraft may read another app's data.
 
-Notecraft reuses the research workspace's code directly:
+## Your library is a folder
 
-- **`@re/parser`** is the reverse-engineered `.one` revision-store parser. It
-  runs in the browser to import sections; nothing is uploaded.
-- **`@re/canvas`** is `<OneNoteCanvas>`, the reconstructed pan/zoom surface
-  every page sits on.
+The desktop app keeps your notes as ordinary files, in `~/Documents/Notecraft`
+unless you choose another folder (**File › Change Library Folder…**):
+
+```
+library.json                 notebook order, page templates, custom tags
+notebooks/<id>.json          a notebook: sections, section groups, Deleted Notes
+pages/<id>.json              one page: notes, pictures, ink
+assets/<key>.<ext>           pictures, attachments and recordings as normal files
+versions/<page>/<id>.json    page versions
+```
+
+Back it up, sync it with any service, or point an agent at it. When something
+else changes the folder (the CLI, an agent, a sync tool), the app reloads the
+changed notes within a second. In the browser the library lives in IndexedDB;
+use **Export** to move a notebook between the two as `.notecraft.json`.
+
+## AI, with your own keys or local models
+
+Settings › AI picks a provider for each job; nothing is sent until you use an
+AI feature, and then only to that provider.
+
+| Feature | Where |
+|---|---|
+| Writing assistant: summarize, find action items, improve, shorten, expand, outline, translate, continue, ask questions about a selection, page, section or notebook | ✨ in the toolbar |
+| Ink to Text: handwriting becomes typed notes in place | Draw tab |
+| Text in pictures (searchable afterwards) | **Text** on a selected picture |
+| Transcription of recordings, with timestamps | **Transcribe** on a recording |
+| Picture and video generation | Insert tab |
+
+Providers: Ollama and LM Studio (local, no key), OpenAI, Anthropic, Groq,
+Google Gemini, and any OpenAI-compatible service. The desktop app keeps keys in
+the system keychain (macOS Keychain, Windows Credential Manager, Secret
+Service) and sends requests from Rust, so keys never reach the page.
+
+## Agents: CLI and MCP
+
+The desktop app ships the `notecraft` command (Settings › Agents shows where):
+
+```bash
+notecraft list                                   # notebooks › sections › pages
+notecraft search "launch plan"                   # titles, notes, tables, picture text
+notecraft show <page-id>                         # a page as Markdown
+notecraft new-page "Work/Meetings" "Standup" "- [ ] Ship it"
+notecraft append <page-id> "## Notes\n- Decided to ship Friday"
+notecraft todos --json                           # every open to-do, as JSON
+notecraft open <page-id>                         # show it in the running app
+notecraft mcp                                    # Model Context Protocol server on stdio
+```
+
+`notecraft mcp` gives agents (Claude, Cursor and other MCP clients) tools to
+list, search, read, create, append, check off to-dos, rename and delete pages,
+and to open a page or a search in the Notecraft window. For Claude Code:
+`claude mcp add notecraft -- notecraft mcp`. Agent edits go to the library
+folder and show up in the app straight away; deleted pages go to Deleted Notes.
 
 ## Develop
+
+Requires Node 24 and a Rust toolchain (`rustup`). On Linux, Tauri also needs
+`libwebkit2gtk-4.1-dev`.
 
 ```bash
 npm install
 npm run dev          # web app at http://127.0.0.1:5190
-npm run desktop      # build and open the desktop app
-npm run desktop:dev  # desktop shell around the running dev server
-npm test             # editing-model and version-history tests
-npm run dist:mac     # installers in release/ (also dist:win, dist:linux)
+npm run desktop      # the desktop app, reloading as you edit (tauri dev)
+npm run dist         # installers in ../target/release/bundle (tauri build)
+npm run build:wasm   # the Rust parser as WebAssembly for the web app
+npm test             # editing model, versions, notebook import, disk sync
+npm run test:rust    # parser, library core, CLI and MCP server
 ```
 
-Push a tag like `v0.2.0` and the [release workflow](../.github/workflows/release.yml)
-builds the installers for every platform and publishes a Release.
+Push a tag like `v0.3.0` and the [release workflow](../.github/workflows/release.yml)
+builds the installers and the CLI for every platform and publishes a Release.
 
-The library is saved in the browser's IndexedDB on every change. Use
-**Export** to download a notebook as `.notecraft.json`.
-
-Notecraft was called Onecraft at first. On the first run after the rename it
-copies an existing Onecraft library into its own storage, and it still imports
-`.onecraft.json` exports.
+Notecraft was called Onecraft at first; it still imports `.onecraft.json`
+exports.
 
 ## Features, and where each comes from
 
@@ -117,9 +172,12 @@ src/
   store/links.ts          page, section and paragraph links; [[wiki]] links
   store/recorder.ts       Insert › Record audio
   lib/paste.ts            paste with formatting (clipboard HTML → paragraphs)
-  ui/prompt.ts            in-app text prompt (Electron has no window.prompt)
-  electron/main.ts        desktop window, native menus, OneNote discovery and parsing (with cache pictures)
-  electron/preload.ts     the bridge between the page and the main process
+  ui/prompt.ts            in-app text prompt (desktop web views have no window.prompt)
+  desktop.ts              the bridge to the desktop app's Rust commands (src-tauri)
+  store/diskSync.ts       saves only what changed to the library folder
+  ai/                     providers and keys, requests, and the AI features
+  ui/AssistantPanel.tsx   the writing assistant
+  ui/SettingsDialog.tsx   AI, Agents and Library settings; Generate picture / video
   ui/Sidebar.tsx, PageList.tsx, Toolbar.tsx, SearchPanel.tsx
 ```
 

@@ -10,30 +10,8 @@ import { store, useStore, type PromptDialog as PromptDialogState } from "../stor
 import { importOneNoteNotebooks, movePage, moveSectionTo, newPageFromTemplate, restoreFromTrash, saveCurrentPageAsTemplate, type OneNoteImportProgress } from "../store/actions.ts";
 import { desktop, type FoundNotebook } from "../desktop.ts";
 import { Icon } from "./icons.tsx";
-
-function Modal({ title, children, onClose, footer }: { title: string; children: ReactNode; onClose: () => void; footer?: ReactNode }) {
-  const ref = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    ref.current?.querySelector<HTMLElement>("input, button")?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-  return (
-    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="dialog" role="dialog" aria-modal="true" aria-label={title} ref={ref}>
-        <header className="dialog-head">
-          <h2>{title}</h2>
-          <button className="icon-btn" aria-label="Close" onClick={onClose}>
-            <Icon.close />
-          </button>
-        </header>
-        <div className="dialog-body">{children}</div>
-        {footer && <footer className="dialog-foot">{footer}</footer>}
-      </div>
-    </div>
-  );
-}
+import { Modal } from "./Modal.tsx";
+import { GenerateDialog, SettingsDialog } from "./SettingsDialog.tsx";
 
 const close = () => store.setUi({ dialog: null });
 
@@ -444,6 +422,8 @@ export function Dialogs() {
   if (dialog.kind === "moveSection") return <MoveSectionDialog sectionId={dialog.sectionId} />;
   if (dialog.kind === "moveGroup") return <MoveGroupDialog groupId={dialog.groupId} />;
   if (dialog.kind === "prompt") return <PromptDialog dialog={dialog} />;
+  if (dialog.kind === "settings") return <SettingsDialog tab={dialog.tab ?? "ai"} />;
+  if (dialog.kind === "generate") return <GenerateDialog media={dialog.media} />;
   if (dialog.kind === "templates") return <TemplatesDialog />;
   if (dialog.kind === "oneNoteImport") return <OneNoteImportDialog />;
   if (dialog.kind === "customTags") return <CustomTagsDialog />;

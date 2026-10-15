@@ -1,0 +1,16 @@
+[package]
+name = "notecraft-cli"
+version = "0.2.0"
+edition = "2021"
+description = "Command-line and MCP access to a Notecraft library, for scripts and AI agents"
+repository = "https://github.com/joshmaster2165/Notecraft"
+publish = false
+
+[[bin]]
+name = "notecraft"
+path = "src/main.rs"
+
+[dependencies]
+notecraft-core = { path = "../core" }
+serde_json = "1"
+clap = { version = "4", features = ["derive"] }

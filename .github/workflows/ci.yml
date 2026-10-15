@@ -1,4 +1,5 @@
-# Typecheck and test the parser and the app on every push and pull request.
+# Typecheck and test the parsers, the app and the Rust crates on every push
+# and pull request.
 name: CI
 
 on:
@@ -7,7 +8,7 @@ on:
   pull_request:
 
 jobs:
-  test:
+  web:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,18 +19,31 @@ jobs:
           cache-dependency-path: |
             onenote-re/package-lock.json
             notecraft/package-lock.json
-      - name: onenote-re
+      - name: onenote-re (TypeScript reference parser)
         working-directory: onenote-re
         run: |
           npm ci
           npm run typecheck
           npm test
-      - name: notecraft
+      - name: notecraft (web app)
         working-directory: notecraft
-        env:
-          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
         run: |
           npm ci
           npx tsc -p tsconfig.json --noEmit
           npm test
           npm run build
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+          targets: wasm32-unknown-unknown
+      - uses: swatinem/rust-cache@v2
+      - name: Parser, core library and CLI
+        run: |
+          cargo test -p onenote-re -p notecraft-core -p notecraft-cli
+          cargo clippy -p onenote-re -p notecraft-core -p notecraft-cli -- -D warnings
+          cargo build -p onenote-re --lib --target wasm32-unknown-unknown --features wasm

@@ -854,13 +854,28 @@ export class OneStore {
     return fd ? this.buf.subarray(fd.offset, fd.offset + fd.length) : null;
   }
 
-  /** Parse the ObjectSpaceObjectPropSet behind a declaration (cached). */
+  /**
+   * Parse the ObjectSpaceObjectPropSet behind a declaration (cached). A
+   * malformed blob (bad reference, truncated ID streams or values) becomes a
+   * warning and null, never an exception.
+   */
   propertySet(decl: ObjectDeclaration): PropertySet | null {
     if (!decl.ref || decl.ref.cb === 0 || !decl.jcid.isPropertySet) return null;
     const key = `${decl.ref.stp}:${decl.ref.cb}`;
     const cached = this.propCache.get(key);
     if (cached) return cached;
-    const r = new Reader(this.buf, decl.ref.stp, decl.ref.stp + decl.ref.cb);
+    try {
+      const set = this.parsePropertySet(decl, decl.ref);
+      this.propCache.set(key, set);
+      return set;
+    } catch (e) {
+      this.warnings.push(`property set of ${egKey(decl.oid)} (jcid 0x${decl.jcid.raw.toString(16)}): ${(e as Error).message}`);
+      return null;
+    }
+  }
+
+  private parsePropertySet(decl: ObjectDeclaration, ref: FileChunkReference): PropertySet {
+    const r = new Reader(this.buf, ref.stp, ref.stp + ref.cb);
     const resolve = (c: CompactId) => this.resolveCompactId(c, decl.gidTable);
 
     const readStream = (): { ids: (ExtendedGuid | null)[]; extended: boolean; osidAbsent: boolean } => {
@@ -939,14 +954,7 @@ export class OneStore {
       return { properties };
     };
 
-    try {
-      const set = readPropertySet();
-      this.propCache.set(key, set);
-      return set;
-    } catch (e) {
-      this.warnings.push(`property set of ${egKey(decl.oid)} (jcid 0x${decl.jcid.raw.toString(16)}): ${(e as Error).message}`);
-      return null;
-    }
+    return readPropertySet();
   }
 }
 

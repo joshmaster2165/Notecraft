@@ -1,4 +1,4 @@
-// A small in-app text prompt. Electron doesn't implement window.prompt, so
+// A small in-app text prompt. Desktop web views don't implement window.prompt, so
 // links, alt text and "Set numbering value" ask through this instead.
 import { store } from "../store/store.ts";
 
