@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { store, useStore } from "../store/store.ts";
-import { importFiles, repairSelection } from "../store/actions.ts";
+import { importFiles, importNotebookFolder, readDroppedEntries, repairSelection } from "../store/actions.ts";
 import { Sidebar } from "./Sidebar.tsx";
 import { PageList } from "./PageList.tsx";
 import { Toolbar } from "./Toolbar.tsx";
@@ -31,6 +31,7 @@ function useDesktopCommands() {
       newNotebook: () => newNotebook(),
       importFromOneNote: () => store.setUi({ dialog: { kind: "oneNoteImport" } }),
       importFiles: () => document.querySelector<HTMLInputElement>(".sidebar-foot input[type=file]")?.click(),
+      importFolder: () => document.querySelector<HTMLInputElement>(".sidebar-foot input.folder-input")?.click(),
       exportNotebook: () => exportNotebook(),
       exportMarkdown: () => exportPageMarkdown(),
       print: () => printPage(),
@@ -152,7 +153,16 @@ export function App() {
       onDragLeave={(e) => e.relatedTarget === null && setDragging(false)}
       onDrop={(e) => {
         setDragging(false);
-        const files = Array.from(e.dataTransfer.files).filter((f) => /\.(one|json)$/i.test(f.name));
+        // A dropped folder is a OneNote notebook: read it with its subfolders.
+        const entries = Array.from(e.dataTransfer.items)
+          .map((i) => i.webkitGetAsEntry?.())
+          .filter((x): x is FileSystemEntry => !!x);
+        if (entries.some((x) => x.isDirectory)) {
+          e.preventDefault();
+          void readDroppedEntries(entries).then(importNotebookFolder);
+          return;
+        }
+        const files = Array.from(e.dataTransfer.files).filter((f) => /\.(one|onetoc2|json)$/i.test(f.name));
         if (!files.length) return;
         e.preventDefault();
         void importFiles(files);

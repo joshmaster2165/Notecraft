@@ -310,7 +310,7 @@ function OneNoteImportDialog() {
       return next;
     });
   const run = async () => {
-    const picks = (found ?? []).map((n) => ({ notebook: n.name, sections: n.sections.filter((s) => picked.has(s.path)) })).filter((p) => p.sections.length);
+    const picks = (found ?? []).map((n) => ({ notebook: n.name, sections: n.sections.filter((s) => picked.has(s.path)), tocs: n.tocs })).filter((p) => p.sections.length);
     await importOneNoteNotebooks(picks, setProgress);
     close();
   };

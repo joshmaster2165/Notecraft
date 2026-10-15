@@ -11,4 +11,5 @@ contextBridge.exposeInMainWorld("notecraftDesktop", {
   },
   scanOneNote: () => ipcRenderer.invoke("onenote:scan"),
   parseOneNote: (path: string) => ipcRenderer.invoke("onenote:parse", path),
+  parseOneNoteToc: (path: string) => ipcRenderer.invoke("onenote:toc", path),
 });

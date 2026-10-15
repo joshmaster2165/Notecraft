@@ -7,6 +7,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { basename, extname, join } from "node:path";
 import { createHash } from "node:crypto";
+import { notebookToc } from "./toc.ts";
 import { OneStore } from "./onestore.ts";
 import { NotebookConverter, dumpObjectGraph } from "./notebook.ts";
 import { OneNoteCache } from "./cache.ts";
@@ -41,6 +42,8 @@ const cache = cacheDir && !raw ? new OneNoteCache(cacheDir) : null;
 const store = new OneStore(new Uint8Array(readFileSync(input)));
 const json = raw
   ? dumpObjectGraph(store)
+  : store.header.fileKind === "toc"
+  ? notebookToc(store)
   : new NotebookConverter(store, {
       sectionName: basename(input, extname(input)),
       resolveFileData: cache?.resolver(),

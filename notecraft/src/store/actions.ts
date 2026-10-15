@@ -3,6 +3,8 @@ import type { Element, Id, Library, ListRef, NoteTag, Page, Run } from "../model
 import { LAYOUT } from "../model/types.ts";
 import * as ops from "../model/ops.ts";
 import { importNotebookJson, importOneFile, type ImportResult } from "../model/importOne.ts";
+import { assembleNotebook, type FolderSection, type FolderToc } from "../model/notebookImport.ts";
+import { parseNotebookToc } from "@re/parser/src/toc.ts";
 import { desktop, type FoundSection } from "../desktop.ts";
 import { listMarkers } from "../model/lists.ts";
 import { tagLabel } from "../model/tags.ts";
@@ -330,27 +332,41 @@ export function insertImageFiles(files: File[], target: { ref: ListRef; afterId:
 
 export async function importFiles(files: File[]) {
   const oneFiles = files.filter((f) => /\.one$/i.test(f.name));
+  const tocFile = files.find((f) => /\.onetoc2$/i.test(f.name));
   const jsonFiles = files.filter((f) => /\.json$/i.test(f.name));
   for (const f of jsonFiles) await importLibraryJson(f);
   if (!oneFiles.length) return;
   const { notebookId } = store.getState().ui;
   const results: ImportResult[] = [];
   const failures: string[] = [];
+  const placed: FolderSection[] = [];
   for (const f of oneFiles) {
     try {
-      results.push(importOneFile(new Uint8Array(await f.arrayBuffer()), f.name));
+      const r = importOneFile(new Uint8Array(await f.arrayBuffer()), f.name);
+      results.push(r);
+      placed.push({ dir: "", fileName: f.name, section: r.section, colorFromFile: r.colorFromFile });
     } catch (e) {
       console.error(e);
       failures.push(`${f.name}: ${(e as Error).message}`);
     }
   }
+  // Sections picked together with their notebook's .onetoc2 follow its order and colors.
+  const tocs: FolderToc[] = [];
+  if (tocFile) {
+    try {
+      tocs.push({ dir: "", toc: parseNotebookToc(new Uint8Array(await tocFile.arrayBuffer())) });
+    } catch (e) {
+      console.warn("Notecraft: could not read", tocFile.name, e);
+    }
+  }
+  const ordered = assembleNotebook(placed, tocs).sections;
   if (results.length) {
     store.edit((d) => {
       const nb = d.notebooks.find((n) => n.id === notebookId) ?? d.notebooks[0]!;
-      nb.sections.push(...results.map((r) => r.section));
+      nb.sections.push(...ordered);
       ops.mergeCustomTags(d, results.flatMap((r) => r.customTags));
     });
-    selectSection(results[0]!.section.id);
+    selectSection(ordered[0]?.id ?? results[0]!.section.id);
     const history = results.flatMap((r) => r.versions);
     const savedVersions = await addImportedVersions(history).catch((e) => {
       console.error("Notecraft: could not store imported page versions", e);
@@ -365,6 +381,86 @@ export async function importFiles(files: File[]) {
     );
   }
   if (failures.length) store.toast(`Could not import ${failures.join("; ")}`);
+}
+
+/**
+ * "Open OneNote notebook folder": a notebook folder (or a folder of notebooks)
+ * picked or dropped in the app. Each top folder becomes a notebook; its
+ * subfolders become section groups and its .onetoc2 files give the order.
+ */
+export async function importNotebookFolder(files: { file: File; path: string }[]) {
+  const usable = files.filter((f) => /\.(one|onetoc2)$/i.test(f.path));
+  if (!usable.length) return store.toast("That folder has no OneNote sections (.one files).");
+  // "Notebook/Group/Section.one" → notebook "Notebook", dir "Group".
+  const byNotebook = new Map<string, { file: File; dir: string; name: string }[]>();
+  for (const f of usable) {
+    const parts = f.path.split("/").filter(Boolean);
+    const top = parts.length > 1 ? parts[0]! : "Imported notebook";
+    const rest = parts.length > 1 ? parts.slice(1) : parts;
+    const list = byNotebook.get(top) ?? [];
+    list.push({ file: f.file, dir: rest.slice(0, -1).join("/"), name: rest[rest.length - 1]! });
+    byNotebook.set(top, list);
+  }
+  let pages = 0;
+  let firstSection: Id | undefined;
+  const failures: string[] = [];
+  for (const [name, list] of byNotebook) {
+    const placed: FolderSection[] = [];
+    const tocs: FolderToc[] = [];
+    const results: ImportResult[] = [];
+    for (const f of list) {
+      try {
+        const bytes = new Uint8Array(await f.file.arrayBuffer());
+        if (/\.onetoc2$/i.test(f.name)) tocs.push({ dir: f.dir, toc: parseNotebookToc(bytes) });
+        else {
+          const r = importOneFile(bytes, f.name);
+          results.push(r);
+          placed.push({ dir: f.dir, fileName: f.name, section: r.section, colorFromFile: r.colorFromFile });
+        }
+      } catch (e) {
+        failures.push(`${f.name}: ${(e as Error).message}`);
+      }
+    }
+    if (!placed.length) continue;
+    const assembled = assembleNotebook(placed, tocs);
+    store.edit((d) => {
+      const nb = ops.createNotebook(d, name);
+      nb.sections = assembled.sections;
+      if (assembled.groups.length) nb.groups = assembled.groups;
+      if (assembled.color) nb.color = assembled.color;
+      ops.mergeCustomTags(d, results.flatMap((r) => r.customTags));
+    });
+    firstSection ??= assembled.sections[0]?.id;
+    pages += results.reduce((n, r) => n + r.stats.pages, 0);
+    await addImportedVersions(results.flatMap((r) => r.versions)).catch(() => 0);
+  }
+  if (firstSection) selectSection(firstSection);
+  store.toast(
+    `Imported ${byNotebook.size} notebook${byNotebook.size === 1 ? "" : "s"}, ${pages} page${pages === 1 ? "" : "s"}` +
+      (failures.length ? ` · ${failures.length} file${failures.length === 1 ? "" : "s"} failed` : ""),
+  );
+  if (failures.length) console.error("Notecraft: notebook folder import failures", failures);
+}
+
+/** Walk dropped folders (FileSystemEntry) into files with their relative paths. */
+export async function readDroppedEntries(entries: FileSystemEntry[]): Promise<{ file: File; path: string }[]> {
+  const out: { file: File; path: string }[] = [];
+  const walk = async (entry: FileSystemEntry, prefix: string): Promise<void> => {
+    if (entry.isFile) {
+      const file = await new Promise<File>((res, rej) => (entry as FileSystemFileEntry).file(res, rej));
+      out.push({ file, path: prefix + entry.name });
+    } else if (entry.isDirectory) {
+      const reader = (entry as FileSystemDirectoryEntry).createReader();
+      // readEntries returns batches until it returns an empty one.
+      for (;;) {
+        const batch = await new Promise<FileSystemEntry[]>((res, rej) => reader.readEntries(res, rej));
+        if (!batch.length) break;
+        for (const child of batch) await walk(child, `${prefix}${entry.name}/`);
+      }
+    }
+  };
+  for (const e of entries) await walk(e, "");
+  return out;
 }
 
 async function importLibraryJson(file: File) {
@@ -462,7 +558,7 @@ export interface OneNoteImportProgress {
  * pictures come from OneNote's cache where it has them.
  */
 export async function importOneNoteNotebooks(
-  picks: { notebook: string; sections: FoundSection[] }[],
+  picks: { notebook: string; sections: FoundSection[]; tocs?: { dir: string; path: string }[] }[],
   onProgress: (p: OneNoteImportProgress) => void,
 ): Promise<void> {
   if (!desktop) return;
@@ -476,23 +572,38 @@ export async function importOneNoteNotebooks(
   let firstSection: Id | undefined;
   for (const pick of picks) {
     const results: ImportResult[] = [];
+    const files: FolderSection[] = [];
     for (const s of pick.sections) {
       onProgress({ done, total, current: `${pick.notebook} › ${s.name}` });
       try {
         const { json, assets, fileName } = await desktop.parseOneNote(s.path);
-        results.push(importNotebookJson(json, fileName, new Map(Object.entries(assets))));
+        const r = importNotebookJson(json, fileName, new Map(Object.entries(assets)));
+        results.push(r);
+        files.push({ dir: s.dir ?? "", fileName, section: r.section, colorFromFile: r.colorFromFile });
       } catch (e) {
         failures.push(`${s.name}: ${(e as Error).message}`);
       }
       done++;
     }
     if (!results.length) continue;
+    // Each folder's .onetoc2 gives section order and colors; subfolders are section groups.
+    const tocs: FolderToc[] = [];
+    for (const t of pick.tocs ?? []) {
+      try {
+        tocs.push({ dir: t.dir, toc: await desktop.parseOneNoteToc(t.path) });
+      } catch (e) {
+        console.warn("Notecraft: could not read", t.path, e);
+      }
+    }
+    const assembled = assembleNotebook(files, tocs);
     store.edit((d) => {
       const nb = ops.createNotebook(d, pick.notebook);
-      nb.sections = results.map((r) => r.section);
+      nb.sections = assembled.sections;
+      if (assembled.groups.length) nb.groups = assembled.groups;
+      if (assembled.color) nb.color = assembled.color;
       ops.mergeCustomTags(d, results.flatMap((r) => r.customTags));
     });
-    firstSection ??= results[0]!.section.id;
+    firstSection ??= assembled.sections[0]?.id;
     for (const r of results) {
       pages += r.stats.pages;
       pictures += r.stats.images - r.stats.imagesWithoutData;

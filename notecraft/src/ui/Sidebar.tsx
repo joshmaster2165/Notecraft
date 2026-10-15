@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type DragEvent } from "react";
 import type { Notebook, Section, SectionGroup } from "../model/types.ts";
 import * as ops from "../model/ops.ts";
 import { store, useStore } from "../store/store.ts";
-import { deleteSection, exportNotebook, importFiles, newNotebook, newSection, newSectionGroup, selectNotebook, selectSection } from "../store/actions.ts";
+import { deleteSection, exportNotebook, importFiles, importNotebookFolder, newNotebook, newSection, newSectionGroup, selectNotebook, selectSection } from "../store/actions.ts";
 import { Icon, Logo } from "./icons.tsx";
 import { desktop } from "../desktop.ts";
 import { copySectionLink } from "../store/links.ts";
@@ -190,6 +190,9 @@ export function Sidebar() {
   const [renaming, setRenaming] = useState<string | null>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const folderInput = useRef<HTMLInputElement>(null);
+  // React doesn't know webkitdirectory; set it on the element.
+  useEffect(() => folderInput.current?.setAttribute("webkitdirectory", ""), []);
 
   return (
     <nav className="sidebar" aria-label="Notebooks">
@@ -237,6 +240,9 @@ export function Sidebar() {
             <button onClick={() => (newNotebook(), setPickerOpen(false))}>
               <Icon.plus width={16} height={16} /> New notebook
             </button>
+            <button onClick={() => (folderInput.current?.click(), setPickerOpen(false))} title="A folder with .one sections and its .onetoc2 table of contents">
+              <Icon.folder width={16} height={16} /> Open OneNote notebook folder…
+            </button>
             {notebook && (
               <button onClick={() => (setRenaming(notebook.id), setPickerOpen(false))}>Rename “{notebook.name}”</button>
             )}
@@ -281,13 +287,25 @@ export function Sidebar() {
         <input
           ref={fileInput}
           type="file"
-          accept=".one,.json,application/json"
+          accept=".one,.onetoc2,.json,application/json"
           multiple
           hidden
           onChange={(e) => {
             const files = Array.from(e.target.files ?? []);
             e.target.value = "";
             void importFiles(files);
+          }}
+        />
+        <input
+          ref={folderInput}
+          className="folder-input"
+          type="file"
+          multiple
+          hidden
+          onChange={(e) => {
+            const files = Array.from(e.target.files ?? []).map((f) => ({ file: f, path: f.webkitRelativePath || f.name }));
+            e.target.value = "";
+            void importNotebookFolder(files);
           }}
         />
       </div>

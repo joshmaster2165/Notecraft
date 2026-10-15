@@ -1,9 +1,11 @@
 // .one import: run the reverse-engineered revision-store parser in the browser
 // and map its NotebookJson onto Notecraft's model.
 import { parseOneNote } from "@re/parser/src/notebook.ts";
+import { inkToSvg } from "@re/parser/src/ink.ts";
 import type {
   ContentBlock,
   ImageBlock,
+  InkBlock,
   ListInfo,
   NoteTag as OneNoteTag,
   NotebookJson,
@@ -12,7 +14,7 @@ import type {
   Page as OnePage,
   TextRun,
 } from "@re/parser/src/notebook.ts";
-import type { CustomTagDef, Element, FloatingImage, ListStyle, NoteTag, NumberScheme, Outline, Page, PageLevel, PageVersion, ParagraphStyle, Run, Section } from "./types.ts";
+import type { CustomTagDef, Element, FloatingImage, InkStroke, ListStyle, NoteTag, NumberScheme, Outline, Page, PageLevel, PageVersion, ParagraphStyle, Run, Section } from "./types.ts";
 import { LAYOUT } from "./types.ts";
 import { newId, nowIso } from "../lib/id.ts";
 import { normalizeRuns } from "../lib/richtext.ts";
@@ -21,11 +23,13 @@ import { tagFromOneNote } from "./tags.ts";
 
 export interface ImportResult {
   section: Section;
-  stats: { pages: number; outlines: number; paragraphs: number; tables: number; images: number; imagesWithoutData: number; warnings: number };
+  stats: { pages: number; outlines: number; paragraphs: number; tables: number; images: number; imagesWithoutData: number; inkStrokes: number; warnings: number };
   /** OneNote's page history (VersionHistoryContent → VersionProxy), mapped onto the imported pages. */
   versions: Omit<PageVersion, "id">[];
   /** Custom tags (not in the default catalog) used by the imported notes. */
   customTags: CustomTagDef[];
+  /** The section file stored its own color (a notebook TOC's color applies otherwise). */
+  colorFromFile: boolean;
 }
 
 const PARAGRAPH_STYLES = new Set(["p", "h1", "h2", "h3", "h4", "h5", "h6", "quote", "code", "cite"]);
@@ -56,7 +60,7 @@ export function importOneFile(bytes: Uint8Array, fileName: string): ImportResult
  * process, where OneNote's cache can fill in missing pictures).
  */
 export function importNotebookJson(json: NotebookJson, fileName: string, assets: Map<string, string>): ImportResult {
-  const stats = { pages: 0, outlines: 0, paragraphs: 0, tables: 0, images: 0, imagesWithoutData: 0, warnings: json.diagnostics.warnings.length };
+  const stats = { pages: 0, outlines: 0, paragraphs: 0, tables: 0, images: 0, imagesWithoutData: 0, inkStrokes: 0, warnings: json.diagnostics.warnings.length };
 
   const runOf = (r: TextRun): Run => {
     const out: Run = { text: r.text };
@@ -111,6 +115,32 @@ export function importNotebookJson(json: NotebookJson, fileName: string, assets:
     };
   };
 
+  // Page ink becomes Notecraft ink: same page points, editable with the Draw tools.
+  const strokesOf = (b: InkBlock): InkStroke[] =>
+    b.strokes
+      .filter((st) => st.points.length >= 2)
+      .map((st) => {
+        stats.inkStrokes++;
+        const hl = !!st.highlighter;
+        const size = Math.max(st.width ?? 0, st.height ?? 0);
+        return {
+          id: newId("k"),
+          tool: hl ? "highlighter" : "pen",
+          color: st.color ?? (hl ? "#ffe14d" : "#1d1f23"),
+          width: Math.round((size || (hl ? 14 : 2)) * 10) / 10,
+          points: st.points,
+        };
+      });
+
+  // Handwriting inside an outline flows with the text, so it comes in as a drawing.
+  const inkImageOf = (b: InkBlock) => {
+    stats.inkStrokes += b.strokes.length;
+    const svg = inkToSvg(b.strokes);
+    const w = Number(/width="([\d.]+)"/.exec(svg)?.[1] ?? 40);
+    const h = Number(/height="([\d.]+)"/.exec(svg)?.[1] ?? 20);
+    return { src: `data:image/svg+xml;base64,${btoa(svg)}`, width: Math.max(8, Math.round(w)), height: Math.max(8, Math.round(h)), alt: "Handwriting", filename: "ink.svg" };
+  };
+
   // OneNote nests children (ElementChildNodes); Notecraft flattens to depth.
   const flatten = (els: OutlineElementBlock[], depth: number, out: Element[]) => {
     for (const oe of els) {
@@ -156,6 +186,8 @@ export function importNotebookJson(json: NotebookJson, fileName: string, assets:
           });
         } else if (c.type === "image") {
           out.push({ id: newId("e"), kind: "image", ...common(), image: imageOf(c) });
+        } else if (c.type === "ink") {
+          if (c.strokes.length) out.push({ id: newId("e"), kind: "image", ...common(), image: inkImageOf(c) });
         } else if (c.type === "embeddedFile") {
           const src = c.asset?.ref ? assets.get(c.asset.ref) : undefined;
           out.push({ id: newId("e"), kind: "file", ...common(), name: c.filename ?? "attachment", ...(c.asset ? { size: c.asset.byteLength } : {}), ...(src ? { src } : {}) });
@@ -183,9 +215,11 @@ export function importNotebookJson(json: NotebookJson, fileName: string, assets:
     stats.pages++;
     const outlines: Outline[] = [];
     const images: FloatingImage[] = [];
+    const ink: InkStroke[] = [];
     for (const b of p.blocks) {
       if (b.type === "outline") outlines.push(outlineOf(b));
       else if (b.type === "image") images.push({ id: newId("i"), x: Math.round(b.layout.x ?? LAYOUT.bodyX), y: Math.round(b.layout.y ?? LAYOUT.bodyY), ...imageOf(b) });
+      else if (b.type === "ink") ink.push(...strokesOf(b));
     }
     const created = p.createdAt ?? p.lastModified ?? nowIso();
     return {
@@ -197,6 +231,7 @@ export function importNotebookJson(json: NotebookJson, fileName: string, assets:
       ...(p.author ? { author: p.author } : {}),
       outlines,
       images,
+      ...(ink.length ? { ink } : {}),
     };
   };
 
@@ -231,7 +266,7 @@ export function importNotebookJson(json: NotebookJson, fileName: string, assets:
   Object.assign(stats, counted);
 
   if (!section.pages.length) section.pages.push({ ...pageOf({ id: "", title: "", size: {}, titleBlocks: [], blocks: [] }) });
-  return { section, stats, versions, customTags: [...customTags.values()] };
+  return { section, stats, versions, customTags: [...customTags.values()], colorFromFile: !!json.section.color };
 }
 
 function hash(s: string): number {

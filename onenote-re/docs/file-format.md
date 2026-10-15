@@ -271,13 +271,14 @@ Details worth knowing **[files]**:
 - **Writer code, not reader code.** The FileDataStoreObject routine found
   through its GUID constants is the writer; the reader compares those GUIDs by
   another path that was not traced.
-- **No `.onetoc2` sample.** The container layer is generic, but the notebook
-  table-of-contents semantics were not exercised. Running `--raw` on a
-  `.onetoc2` file dumps its object graph.
+- **No `.onetoc2` or ink sample.** The Mac backups contain neither. §13 and
+  §14 follow onenote.rs and [MS-ONE]; they are covered by unit tests on
+  synthetic data, not yet by real files. `--raw` dumps any file's object graph.
 - **Not decoded:**
   - Password-protected sections (`ObjectDataEncryptionKeyV2FNDX`). These are
     detected and reported.
-  - Ink strokes.
+  - Handwriting embedded in text runs (`TextRunDataObject` → InkDataNode) and
+    OneNote's handwriting recognition (`RecognizedText*`, 0x20054–57).
   - Several image properties: `TextContentMetadata` (0x1D61), `EncryptedHash`
     (0x1DFB, a Windows DPAPI blob) and `OriginalPageNumber` (0x1DF9). Only
     `UnverifiedHash` (0x1DFC) is used (§11.5). Names come from §11.6; the values
@@ -538,3 +539,73 @@ VersionProxy
 
 Notecraft (`../notecraft`) imports these as read-only "OneNote" versions next
 to its own snapshots.
+
+---
+
+## 13. Ink
+
+[MS-ONE] does not document ink. The object graph, property IDs and point
+encoding below follow onenote.rs (msiemens), whose author validated them
+against real files; this repository has no ink sample yet (§10). The parser
+implements them in `parser/src/ink.ts`.
+
+```
+PageNode.ElementChildNodes ─→ InkContainer (0x60014)            page ink
+OutlineElementNode.ContentChildNodes ─→ InkContainer             ink inside an outline
+InkContainer
+  InkData (0x20003415) → InkDataNode (0x2003B)
+  │   InkStrokes (0x24003416) → InkStrokeNode (0x20047)…
+  │   InkBoundingBox (0x1C003418)  4 × i32 [xMin, yMin, xMax, yMax], HIMETRIC
+  ├ ContentChildNodes → nested InkContainers (groups; offsets add up)
+  ├ InkScalingX/Y (0x14001C46/47)  f32, multiplies coordinates
+  └ OffsetFromParentHoriz/Vert     f32 half-inches (page ink only)
+InkStrokeNode
+  InkPath (0x1C00340B)             point data, see below
+  InkBias (0x0C00341C)             0 handwriting · 1 drawing · 2 both
+  InkStrokeProperties (0x20003409) → StrokePropertiesNode (0x120048)
+StrokePropertiesNode
+  InkDimensions (0x1C00340A)       32-byte entries: GUID, i32 min, i32 max, 8 bytes
+  InkWidth / InkHeight (0x1400340D / 0x1400340C)   f32 HIMETRIC
+  InkColor (0x1400340F)            COLORREF 0x00BBGGRR
+  InkTransparency (0x0C003414)     u8, 0 = opaque
+  InkRasterOperation (0x0C003413)  9 (mask pen) marks a highlighter in Windows Ink
+  InkPenTip (0x0C003412)           0 = round
+```
+
+**InkPath** is an [MS-ISF] multi-byte sequence: unsigned integers of 7 bits
+per byte, low group first, high bit = more. The first integer is the value
+count ×2; every value keeps its sign in the low bit (`v >> 1`, negated when
+bit 0 is set). Values are grouped by dimension, not interleaved: all X, then
+all Y, then any others (pressure), in `InkDimensions` order (X =
+`{598A6A8F-52C0-4BA0-93AF-AF357411A561}`, Y =
+`{B53F9F75-04E0-4498-A7EE-C30DBB5A9011}`). The first value of each dimension
+is absolute and the rest are deltas.
+
+**Units.** Coordinates × InkScaling are HIMETRIC (0.01 mm); points =
+HIMETRIC × 72 / 2540. Page ink adds the container offset (half-inches × 36).
+Ink inside an outline flows with the text, so the parser makes it relative to
+its bounding box and marks the block `embedded`.
+
+Notecraft turns page ink into its own editable strokes and embedded ink into
+an inline drawing.
+
+## 14. Notebook table of contents (`.onetoc2`)
+
+A notebook folder holds one `.onetoc2` and its `.one` sections; each section
+group is a subfolder with its own `.onetoc2` ([MS-ONE] §2.1.15). The root
+object is `jcidPersistablePropertyContainerForTOC` (0x20001); its entries use
+the same JCID. `parser/src/toc.ts` reads it.
+
+| Property | ID | Meaning |
+|---|---|---|
+| TOCEntryIndex_OidIndex | 0x24001CF6 | child entries (root) |
+| FolderChildFilename | 0x1C001D6B | entry name; `^M` = `+`, `^J` = `,` |
+| NotebookElementOrderingID | 0x14001CB9 | display order |
+| NotebookColor | 0x14001CBE | COLORREF; top byte inverted alpha; 0xFFFFFFFF = none |
+| FileIdentityGuid | 0x1C001D94 | the section file's `guidFile` |
+
+Nothing marks an entry as a section or a group; that is decided on disk
+(`X.one` file vs `X` folder), and the file system name wins over
+`FolderChildFilename`. Later entries with the same name override earlier
+ones; entries are then sorted by ordering id. The root's color is the
+notebook's; a section's own `.one` color wins over its TOC entry's.

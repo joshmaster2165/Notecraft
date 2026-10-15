@@ -88,6 +88,8 @@ Evidence ID stays on the analysis machine and isn't part of the repository.
 | ⌘E search across notebooks, including table cells and OCR text | OneNote's search scope | (behavioural) |
 | **Page versions** (clock button): Notecraft saves a version before your first edit, after a minute without edits, and when you leave a page. Preview any version read-only, then restore it as one undoable step. Keeps the latest 50 per page | OneNote's page history: each version is a full page revision in its own context | FF §12 |
 | Importing a `.one` brings OneNote's own page history (badged "OneNote", with its original author and time) | `PageManifestNode.VersionHistoryGraphSpaceContextNodes` → `VersionHistoryContent 0x6003C` → `VersionProxy 0x6003D` → historical revision | FF §12 |
+| Imported ink: page drawings become editable strokes; handwriting inside notes becomes an inline drawing | `InkContainer 0x60014` → `InkDataNode` → `InkStrokeNode`; `InkPath` multi-byte deltas in HIMETRIC | FF §13 |
+| Open a OneNote notebook folder: section order, colors and section groups | `.onetoc2` `TOCEntryIndex_OidIndex`, `FolderChildFilename`, `NotebookElementOrderingID`, `NotebookColor`; subfolders are groups | FF §14 |
 
 ## Structure
 
@@ -143,8 +145,7 @@ already have the groundwork mapped in the format analysis:
 | Next feature | What to build on |
 |---|---|
 | Author attribution per paragraph | `AuthorOriginal 0x20001D78`, `AuthorMostRecent 0x20001D79` → `ReadOnlyPersistablePropertyContainerForAuthor 0x120001` |
-| Reading `.onetoc2` directly (section order, groups, colors) | The `.onetoc2` table of contents. The parser reads its container; its semantics still need mapping (FF §10) |
 | Background images | `ImageNode.IsBackground 0x08001D13`, page margins `0x14001C4C–4F` |
-| Importing OneNote ink | `InkContainer 0x60047`, `InkStrokeNode 0x60048`; the strokes are not decoded yet (Notecraft's own ink works) |
+| Handwriting inside text and OneNote's handwriting recognition | `TextRunDataObject` → InkDataNode; `RecognizedText*` 0x20054–57 (FF §13) |
 | Password-protected sections | `ObjectDataEncryptionKeyV2FNDX`, detected by the parser today |
 | Write `.one` files | The writer routines are mapped: fragment create/finalize `FUN_100d32b74`/`FUN_100d32d8c`, FileDataStoreObject writer `FUN_100d1be84` (FF §9) |

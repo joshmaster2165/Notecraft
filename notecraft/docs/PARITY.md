@@ -6,7 +6,7 @@ from the binary and file-format analysis in [`../../onenote-re`](../../onenote-r
 
 ✅ done · 🟡 partial · ⬜ not yet · — not applicable to a local-first app
 
-**54 of 67 done**, 5 partial, 7 not yet, 1 not applicable.
+**55 of 67 done**, 4 partial, 7 not yet, 1 not applicable.
 
 ## Organize
 
@@ -66,7 +66,7 @@ from the binary and file-format analysis in [`../../onenote-re`](../../onenote-r
 | Pen, highlighter (colors, thickness) | ✅ | Stored in page points, so ink stays on its text at every zoom |
 | Stroke eraser | ✅ | |
 | Lasso select, move ink | ✅ | Drag to move, Delete to remove |
-| Shapes, Ink to Shape, Ink to Text | 🟡 | Line, arrow, rectangle, ellipse; no handwriting recognition. Imported ink isn't decoded yet (`InkContainer 0x60047`) |
+| Shapes, Ink to Shape, Ink to Text | 🟡 | Line, arrow, rectangle, ellipse; no handwriting recognition yet |
 | Pressure sensitivity | ⬜ | |
 
 ## View
@@ -93,9 +93,9 @@ from the binary and file-format analysis in [`../../onenote-re`](../../onenote-r
 
 | OneNote | Notecraft | Notes |
 |---|---|---|
-| Open `.one` sections | ✅ | In the browser or desktop app; includes page history |
+| Open `.one` sections | ✅ | In the browser or desktop app; includes page history and ink |
 | Import OneNote notebooks on this computer | ✅ | Desktop. Pictures come from OneNote's cache when it has them |
-| Open `.onetoc2` notebooks | 🟡 | The desktop importer groups sections by notebook folder; `.onetoc2` itself isn't read |
+| Open `.onetoc2` notebooks | ✅ | Section order, colors and section groups; open a notebook folder or drop it on the window |
 | Export notebook | ✅ | `.notecraft.json` |
 | Export page | ✅ | Markdown |
 | Print / save as PDF | ✅ | |

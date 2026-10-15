@@ -8,7 +8,7 @@
     "build": "tsc -p tsconfig.json --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1 --port 5191",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --test src/model/ops.test.ts src/model/versions.test.ts",
+    "test": "node --test src/model/ops.test.ts src/model/versions.test.ts src/model/notebookImport.test.ts",
     "build:electron": "node electron/build.mjs",
     "desktop": "npm run build && npm run build:electron && electron .",
     "desktop:dev": "npm run build:electron && NOTECRAFT_DEV_URL=http://127.0.0.1:5190 electron .",

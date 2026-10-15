@@ -6,7 +6,7 @@
   <a href="https://github.com/joshmaster2165/Notecraft/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/joshmaster2165/Notecraft?label=download&color=1f3a5f"></a>
   <a href="https://github.com/joshmaster2165/Notecraft/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/joshmaster2165/Notecraft/ci.yml?branch=main&label=tests"></a>
   <img alt="macOS, Windows, Linux" src="https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Windows%20%C2%B7%20Linux%20%C2%B7%20web-2f6fb3">
-  <a href="notecraft/docs/PARITY.md"><img alt="OneNote parity: 54 of 67 features" src="https://img.shields.io/badge/OneNote%20parity-54%2F67-f4b860"></a>
+  <a href="notecraft/docs/PARITY.md"><img alt="OneNote parity: 55 of 67 features" src="https://img.shields.io/badge/OneNote%20parity-55%2F67-f4b860"></a>
 </p>
 
 <p align="center">
@@ -113,8 +113,8 @@ and export to PDF, Markdown or a portable `.notecraft.json`.
 </table>
 
 The feature-by-feature comparison with OneNote, including what's still
-missing, is in **[PARITY.md](notecraft/docs/PARITY.md)**: 54 of 67 features
-done, 5 partial.
+missing, is in **[PARITY.md](notecraft/docs/PARITY.md)**: 55 of 67 features
+done, 4 partial.
 
 ## Import your OneNote notebooks
 
@@ -124,10 +124,13 @@ done, 5 partial.
 - **Any version:** drop `.one` section files onto the sidebar, in the desktop
   app or the browser.
 
+- **A notebook folder:** **Open OneNote notebook folder…** in the notebook
+  menu, or drop the folder on the window. Section groups, order and colors come
+  from its `.onetoc2` files.
+
 Parsing happens on your machine; nothing is uploaded. Tags (including your
-custom ones), tables, pictures, links, alignment, spacing and fonts come
-across. Password-protected sections and OneNote's ink are detected but not yet
-decoded.
+custom ones), tables, pictures, ink, links, alignment, spacing and fonts come
+across. Password-protected sections are detected but not yet decrypted.
 
 ## How it's built
 

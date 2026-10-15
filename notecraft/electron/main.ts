@@ -7,6 +7,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { parseOneNote, sniffMediaType } from "../../onenote-re/parser/src/notebook.ts";
 import { OneNoteCache } from "../../onenote-re/parser/src/cache.ts";
+import { parseNotebookToc } from "../../onenote-re/parser/src/toc.ts";
 
 const isMac = process.platform === "darwin";
 const devUrl = process.env.NOTECRAFT_DEV_URL;
@@ -66,6 +67,7 @@ function buildMenu() {
         { type: "separator" },
         { label: "Import from OneNote on This Computer…", click: send("importFromOneNote") },
         { label: "Import .one Files…", accelerator: "CmdOrCtrl+O", click: send("importFiles") },
+        { label: "Open OneNote Notebook Folder…", accelerator: "CmdOrCtrl+Shift+O", click: send("importFolder") },
         { label: "Export Notebook…", accelerator: "CmdOrCtrl+Shift+E", click: send("exportNotebook") },
         { label: "Export Page as Markdown…", click: send("exportMarkdown") },
         { type: "separator" },
@@ -123,12 +125,16 @@ function buildMenu() {
 interface FoundSection {
   path: string;
   name: string;
+  /** Folder inside the notebook ("" for the top); subfolders are section groups. */
+  dir: string;
   modified: string;
   bytes: number;
 }
 interface FoundNotebook {
   name: string;
   sections: FoundSection[];
+  /** .onetoc2 tables of contents, one per folder that has one. */
+  tocs: { dir: string; path: string }[];
 }
 
 /** Where OneNote keeps notebooks on this machine. */
@@ -146,9 +152,9 @@ function oneNoteRoots(): string[] {
 
 /** Backups are named "Section (On 2026-10-14).one"; keep the newest copy of each section. */
 function scanNotebooks(): FoundNotebook[] {
-  const notebooks = new Map<string, Map<string, FoundSection>>();
-  const walk = (dir: string, notebook: string | null, depth: number) => {
-    if (depth > 6) return;
+  const notebooks = new Map<string, { sections: Map<string, FoundSection>; tocs: Map<string, string> }>();
+  const walk = (dir: string, notebook: string | null, rel: string[], depth: number) => {
+    if (depth > 8) return;
     for (const name of readdirSync(dir)) {
       const p = join(dir, name);
       let st;
@@ -159,26 +165,39 @@ function scanNotebooks(): FoundNotebook[] {
       }
       if (st.isDirectory()) {
         if (/^OneNote_RecycleBin$/i.test(name)) continue;
-        walk(p, notebook ?? name, depth + 1);
+        if (notebook === null) walk(p, name, [], depth + 1);
+        else walk(p, notebook, [...rel, name], depth + 1);
+        continue;
+      }
+      const nb = notebook ?? basename(dirname(p));
+      const entry = notebooks.get(nb) ?? { sections: new Map<string, FoundSection>(), tocs: new Map<string, string>() };
+      notebooks.set(nb, entry);
+      const relDir = rel.join("/");
+      if (/\.onetoc2$/i.test(name)) {
+        entry.tocs.set(relDir, p);
       } else if (/\.one$/i.test(name)) {
-        const nb = notebook ?? basename(dirname(p));
         const section = name.replace(/\.one$/i, "").replace(/\s*\(On \d{4}-\d{2}-\d{2}\)$/, "");
-        const entry: FoundSection = { path: p, name: section, modified: st.mtime.toISOString(), bytes: st.size };
-        const sections = notebooks.get(nb) ?? new Map<string, FoundSection>();
-        const prev = sections.get(section);
-        if (!prev || prev.modified < entry.modified) sections.set(section, entry);
-        notebooks.set(nb, sections);
+        const found: FoundSection = { path: p, name: section, dir: relDir, modified: st.mtime.toISOString(), bytes: st.size };
+        const key = `${relDir}/${section}`;
+        const prev = entry.sections.get(key);
+        if (!prev || prev.modified < found.modified) entry.sections.set(key, found);
       }
     }
   };
   for (const root of oneNoteRoots()) {
     try {
-      walk(root, null, 0);
+      walk(root, null, [], 0);
     } catch (e) {
       console.error("Notecraft: could not read", root, e);
     }
   }
-  return [...notebooks].map(([name, sections]) => ({ name, sections: [...sections.values()].sort((a, b) => a.name.localeCompare(b.name)) }));
+  return [...notebooks]
+    .filter(([, e]) => e.sections.size)
+    .map(([name, e]) => ({
+      name,
+      sections: [...e.sections.values()].sort((a, b) => a.dir.localeCompare(b.dir) || a.name.localeCompare(b.name)),
+      tocs: [...e.tocs].map(([dir, path]) => ({ dir, path })),
+    }));
 }
 
 const caches = new Map<string, OneNoteCache | null>();
@@ -219,6 +238,12 @@ function registerIpc() {
       throw new Error("Not a OneNote section in a OneNote folder");
     }
     return parseSection(path);
+  });
+  ipcMain.handle("onenote:toc", (_e, path: string) => {
+    if (typeof path !== "string" || !/\.onetoc2$/i.test(path) || !oneNoteRoots().some((r) => path.startsWith(r))) {
+      throw new Error("Not a OneNote notebook table of contents in a OneNote folder");
+    }
+    return parseNotebookToc(new Uint8Array(readFileSync(path)));
   });
 }
 

@@ -5,7 +5,7 @@
   "scripts": {
     "parse": "node parser/src/cli.ts",
     "smoke": "node parser/src/smoke.ts",
-    "test": "node --test canvas/viewport.test.ts parser/src/cache.test.ts",
+    "test": "node --test canvas/viewport.test.ts parser/src/cache.test.ts parser/src/ink.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build:demo": "esbuild canvas/demo/main.tsx --bundle --minify --format=iife --jsx=automatic --outfile=canvas/demo/app.js",
     "demo": "npm run build:demo && python3 -m http.server 5180 --bind 127.0.0.1 --directory canvas/demo"

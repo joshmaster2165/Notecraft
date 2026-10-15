@@ -20,6 +20,18 @@ import {
 } from "./onestore.ts";
 import { Jcid, Prop, jcidName, propName } from "./schema.ts";
 import { utf16le, latin1, hex } from "./reader.ts";
+import {
+  HIMETRIC_PT,
+  decodeBoundingBox,
+  decodeInkDimensions,
+  decodeInkPath,
+  pointBounds,
+  strokePoints,
+  type InkBlock,
+  type InkStroke,
+} from "./ink.ts";
+
+export type { InkBlock, InkStroke } from "./ink.ts";
 
 // --- output types ------------------------------------------------------------
 
@@ -132,7 +144,7 @@ export interface UnknownBlock {
   properties: Record<string, unknown>;
 }
 
-export type ContentBlock = RichTextBlock | ImageBlock | EmbeddedFileBlock | TableBlock | UnknownBlock;
+export type ContentBlock = RichTextBlock | ImageBlock | EmbeddedFileBlock | TableBlock | InkBlock | UnknownBlock;
 
 export interface ListInfo {
   kind: "bullet" | "numbered";
@@ -181,7 +193,7 @@ export interface OutlineBlock {
   children: OutlineElementBlock[];
 }
 
-export type PageBlock = OutlineBlock | ImageBlock | EmbeddedFileBlock | UnknownBlock;
+export type PageBlock = OutlineBlock | ImageBlock | EmbeddedFileBlock | InkBlock | UnknownBlock;
 
 export interface Page {
   id: string;
@@ -573,8 +585,86 @@ export class NotebookConverter {
       case Jcid.OutlineNode: return this.convertOutline(ctx, decl);
       case Jcid.ImageNode: return this.convertImage(ctx, decl);
       case Jcid.EmbeddedFileNode: return this.convertEmbeddedFile(ctx, decl);
-      default: return this.unknown(decl);
+      default: return this.isInk(decl) ? this.convertInk(ctx, decl, false) : this.unknown(decl);
     }
+  }
+
+  // --- ink (file-format.md §13) ------------------------------------------------
+
+  /** An ink container by JCID, or by shape: it points at ink data or holds ink groups. */
+  private isInk(decl: ObjectDeclaration): boolean {
+    if (decl.jcid.raw === Jcid.InkContainer) return true;
+    const p = this.props(decl);
+    return p.has(Prop.InkData!) || p.has(Prop.InkStrokes!);
+  }
+
+  private convertInk(ctx: Ctx, decl: ObjectDeclaration, embedded: boolean): InkBlock {
+    const strokes: InkStroke[] = [];
+    let box: [number, number, number, number] | undefined;
+    const walk = (d: ObjectDeclaration, ox: number, oy: number, depth: number) => {
+      if (depth > 16) return;
+      const p = this.props(d);
+      // Page ink is placed by the container's offset; groups nest offsets.
+      const x = ox + (embedded ? 0 : (halfInches(p.f32(Prop.OffsetFromParentHoriz!)) ?? 0));
+      const y = oy + (embedded ? 0 : (halfInches(p.f32(Prop.OffsetFromParentVert!)) ?? 0));
+      const sx = p.f32(Prop.InkScalingX!) ?? 1;
+      const sy = p.f32(Prop.InkScalingY!) ?? 1;
+      // The container itself may be the data node (InkStrokes directly on it).
+      const data = p.has(Prop.InkStrokes!) ? d : p.oids(Prop.InkData!).map((o) => this.resolve(ctx, o)).find(Boolean);
+      if (data) {
+        const dp = this.props(data);
+        const bb = decodeBoundingBox(dp.bytes(Prop.InkBoundingBox!));
+        if (bb && !box) box = [bb[0] * sx * HIMETRIC_PT + x, bb[1] * sy * HIMETRIC_PT + y, bb[2] * sx * HIMETRIC_PT + x, bb[3] * sy * HIMETRIC_PT + y];
+        for (const so of dp.oids(Prop.InkStrokes!)) {
+          const sd = this.resolve(ctx, so);
+          const stroke = sd && this.convertStroke(ctx, sd, sx, sy, x, y);
+          if (stroke) strokes.push(stroke);
+        }
+      }
+      for (const co of p.oids(Prop.ContentChildNodes!)) {
+        const cd = this.resolve(ctx, co);
+        if (cd && this.isInk(cd)) walk(cd, x, y, depth + 1);
+      }
+    };
+    walk(decl, 0, 0, 0);
+    const all = strokes.flatMap((s) => s.points);
+    let bounds = pointBounds(all);
+    if (embedded) {
+      // Strokes flow with the text: make them relative to the ink's own box.
+      const ox = box ? Math.min(box[0], bounds?.x ?? box[0]) : (bounds?.x ?? 0);
+      const oy = box ? Math.min(box[1], bounds?.y ?? box[1]) : (bounds?.y ?? 0);
+      for (const st of strokes) st.points = st.points.map((v, i) => round(v - (i % 2 ? oy : ox)));
+      bounds = pointBounds(strokes.flatMap((st) => st.points));
+      if (bounds) bounds = { x: 0, y: 0, width: round(bounds.x + bounds.width), height: round(bounds.y + bounds.height) };
+    }
+    return compact({ type: "ink" as const, id: egKey(decl.oid), embedded: embedded || undefined, bounds, strokes });
+  }
+
+  private convertStroke(ctx: Ctx, decl: ObjectDeclaration, sx: number, sy: number, x: number, y: number): InkStroke | null {
+    const p = this.props(decl);
+    const path = p.bytes(Prop.InkPath!);
+    if (!path) return null;
+    const propsDecl = p.oids(Prop.InkStrokeProperties!).map((o) => this.resolve(ctx, o)).find(Boolean);
+    const sp = this.props(propsDecl);
+    const raw = strokePoints(decodeInkPath(path), decodeInkDimensions(sp.bytes(Prop.InkDimensions!)), sx, sy);
+    if (!raw.length) return null;
+    const points = raw.map((v, i) => round(v * HIMETRIC_PT + (i % 2 ? y : x)));
+    const w = sp.f32(Prop.InkWidth!);
+    const h = sp.f32(Prop.InkHeight!);
+    const transparency = sp.u32(Prop.InkStrokeTransparency!);
+    const rop = sp.u32(Prop.InkRasterOperation!);
+    const bias = p.u32(Prop.InkBias!);
+    return compact({
+      points,
+      color: colorRef(sp.u32(Prop.InkColor!)) ?? (sp.has(Prop.InkColor!) ? "#000000" : undefined),
+      width: w !== undefined && Number.isFinite(w) ? round(w * HIMETRIC_PT) : undefined,
+      height: h !== undefined && Number.isFinite(h) ? round(h * HIMETRIC_PT) : undefined,
+      transparency: transparency || undefined,
+      // R2_MASKPEN (9) is how Windows Ink draws highlighters; OneNote's are also translucent.
+      highlighter: rop === 9 || (transparency ?? 0) >= 64 || undefined,
+      penTip: sp.u32(Prop.InkPenTipShape!) || undefined,
+      bias: bias === 0 ? "handwriting" : bias === 1 ? "drawing" : bias === 2 ? "both" : undefined,
+    } satisfies InkStroke);
   }
 
   private layout(p: Props): Layout {
@@ -648,7 +738,7 @@ export class NotebookConverter {
       case Jcid.ImageNode: return this.convertImage(ctx, d);
       case Jcid.TableNode: return this.convertTable(ctx, d);
       case Jcid.EmbeddedFileNode: return this.convertEmbeddedFile(ctx, d);
-      default: return this.unknown(d);
+      default: return this.isInk(d) ? this.convertInk(ctx, d, true) : this.unknown(d);
     }
   }
 
