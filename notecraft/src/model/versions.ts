@@ -27,7 +27,7 @@ export function hashString(str: string, seed = 0): string {
 
 /** What a reader sees: title, outlines and images. Timestamps and levels don't count. */
 export function pageSignature(page: Page): string {
-  return hashString(JSON.stringify([page.title, page.outlines, page.images]));
+  return hashString(JSON.stringify([page.title, page.outlines, page.images, page.ink ?? [], page.paper ?? null]));
 }
 
 // --- snapshot timing -------------------------------------------------------------------
@@ -91,7 +91,7 @@ export function changedPages(prev: Library, next: Library): { pageId: Id; before
     for (const s of nb.sections) {
       for (const p of s.pages) {
         const old = before.get(p.id);
-        if (old && old !== p && (old.title !== p.title || old.outlines !== p.outlines || old.images !== p.images)) out.push({ pageId: p.id, before: old });
+        if (old && old !== p && (old.title !== p.title || old.outlines !== p.outlines || old.images !== p.images || old.ink !== p.ink || old.paper !== p.paper)) out.push({ pageId: p.id, before: old });
       }
     }
   }
@@ -113,6 +113,10 @@ export function restorePageVersion(lib: Library, pageId: Id, snapshot: Page): vo
   hit.page.title = snapshot.title;
   hit.page.outlines = snapshot.outlines;
   hit.page.images = snapshot.images;
+  if (snapshot.ink?.length) hit.page.ink = snapshot.ink;
+  else delete hit.page.ink;
+  if (snapshot.paper) hit.page.paper = snapshot.paper;
+  else delete hit.page.paper;
   hit.page.modifiedAt = nowIso();
 }
 

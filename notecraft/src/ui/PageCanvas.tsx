@@ -1,6 +1,6 @@
 // The page surface: OneNote's reconstructed pan/zoom canvas hosting the title,
 // free-form outlines and floating images.
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type DragEvent, type KeyboardEvent, type PointerEvent, type RefObject } from "react";
+import { memo, useMemo, useCallback, useEffect, useLayoutEffect, useRef, useState, type DragEvent, type KeyboardEvent, type PointerEvent, type RefObject } from "react";
 import { OneNoteCanvas } from "@re/canvas/OneNoteCanvas.tsx";
 import type { Rect } from "@re/canvas/viewport.ts";
 import type { Page } from "../model/types.ts";
@@ -13,6 +13,8 @@ import { canvasApi, currentZoom, publishView } from "./canvasApi.ts";
 import { OutlineView } from "./editor/OutlineView.tsx";
 import { FloatingImageView } from "./editor/media.tsx";
 import { ReadOnlyContext } from "./editor/readOnly.ts";
+import { InkLayer, inkBounds } from "./editor/InkLayer.tsx";
+import type { PaperStyle } from "../model/types.ts";
 
 const MIN_EXTENT = { width: 1000, height: 1300 };
 const MARGIN = { right: 480, bottom: 640 };
@@ -58,7 +60,7 @@ function PageTitle({ page, readOnly }: { page: Page; readOnly: boolean }) {
 }
 
 /** Measure laid-out content (zoom-independent offset sizes) to size the scrollable page. */
-function useContentExtent(layer: RefObject<HTMLDivElement | null>, pageId: string): Rect {
+function useContentExtent(layer: RefObject<HTMLDivElement | null>, pageId: string, extra: { right: number; bottom: number }): Rect {
   const [extent, setExtent] = useState<Rect>({ x: 0, y: 0, ...MIN_EXTENT });
   const measure = useCallback(() => {
     const root = layer.current;
@@ -66,14 +68,16 @@ function useContentExtent(layer: RefObject<HTMLDivElement | null>, pageId: strin
     let right = 0;
     let bottom = 0;
     for (const child of Array.from(root.children) as HTMLElement[]) {
-      if (child.classList.contains("paper-bg")) continue;
+      if (child.classList.contains("paper-bg") || child.classList.contains("ink-layer")) continue;
       right = Math.max(right, child.offsetLeft + child.offsetWidth);
       bottom = Math.max(bottom, child.offsetTop + child.offsetHeight);
     }
+    right = Math.max(right, extra.right);
+    bottom = Math.max(bottom, extra.bottom);
     const width = Math.max(MIN_EXTENT.width, Math.ceil(right + MARGIN.right));
     const height = Math.max(MIN_EXTENT.height, Math.ceil(bottom + MARGIN.bottom));
     setExtent((e) => (e.width === width && e.height === height ? e : { x: 0, y: 0, width, height }));
-  }, [layer]);
+  }, [layer, extra.right, extra.bottom]);
 
   useLayoutEffect(() => {
     const root = layer.current;
@@ -99,7 +103,8 @@ function useContentExtent(layer: RefObject<HTMLDivElement | null>, pageId: strin
 export const PageCanvas = memo(function PageCanvas({ page, version }: { page: Page; version?: string }) {
   const readOnly = !!version;
   const layer = useRef<HTMLDivElement>(null);
-  const extent = useContentExtent(layer, page.id);
+  const ink = useMemo(() => inkBounds(page.ink), [page.ink]);
+  const extent = useContentExtent(layer, page.id, ink);
   const anchor = useStore((s) => s.ui.zoomAnchor);
   const initial = cachedView(page.id);
   const [dropping, setDropping] = useState(false);
@@ -188,8 +193,8 @@ export const PageCanvas = memo(function PageCanvas({ page, version }: { page: Pa
         onDrop={onDrop}
       >
         <ReadOnlyContext.Provider value={readOnly}>
-        <div className="paper-bg" />
-        <PageTitle page={page} readOnly={readOnly} />
+        <div className="paper-bg" style={paperBackground(page.paper)} />
+        {!page.hideTitle && <PageTitle page={page} readOnly={readOnly} />}
         {empty && !readOnly && (
           <div className="paper-hint" style={{ left: LAYOUT.bodyX, top: LAYOUT.bodyY }}>
             Click anywhere to start writing
@@ -201,11 +206,30 @@ export const PageCanvas = memo(function PageCanvas({ page, version }: { page: Pa
         {page.images.map((img) => (
           <FloatingImageView key={img.id} pageId={page.id} img={img} />
         ))}
+        <InkLayer page={page} readOnly={readOnly} />
         </ReadOnlyContext.Provider>
       </div>
     </OneNoteCanvas>
   );
 });
+
+/** View > Paper Style: page color plus ruled or grid lines (spacing in points, as OneNote draws them). */
+const RULE_SPACING: Record<string, number> = { narrow: 18, standard: 22, college: 26, "grid-small": 12, "grid-medium": 18, "grid-large": 27 };
+
+function paperBackground(paper: PaperStyle | undefined) {
+  const style: Record<string, string> = {};
+  if (paper?.color) style.backgroundColor = paper.color;
+  const rule = paper?.rule;
+  if (rule && rule !== "none") {
+    const gap = RULE_SPACING[rule]!;
+    const c = paper.ruleColor ?? "#9ec1e6";
+    const lines = `repeating-linear-gradient(to bottom, transparent 0 ${gap - 1}px, ${c} ${gap - 1}px ${gap}px)`;
+    style.backgroundImage = rule.startsWith("grid") ? `${lines}, repeating-linear-gradient(to right, transparent 0 ${gap - 1}px, ${c} ${gap - 1}px ${gap}px)` : lines;
+    // Ruled paper starts below the title area, like OneNote's.
+    style.backgroundPosition = rule.startsWith("grid") ? "0 0" : "0 96px";
+  }
+  return style;
+}
 
 export function useActivePage(): Page | undefined {
   return useStore((s) => (s.ui.pageId ? ops.findPage(s.lib, s.ui.pageId)?.page : undefined));

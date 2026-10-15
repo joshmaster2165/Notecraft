@@ -4,6 +4,8 @@
 import type { Library } from "../model/types.ts";
 import type { ViewportState } from "@re/canvas/viewport.ts";
 import { seedLibrary } from "../model/seed.ts";
+import { migrateLibrary } from "../model/migrate.ts";
+import { expireTrash } from "../model/ops.ts";
 import { store } from "./store.ts";
 import { get, put, readLegacyLibrary } from "../lib/idb.ts";
 
@@ -40,6 +42,8 @@ export async function loadLibrary(): Promise<void> {
     console.error("Notecraft: could not open IndexedDB", e);
   }
   if (!lib || lib.version !== 1 || !lib.notebooks?.length) lib = seedLibrary();
+  migrateLibrary(lib);
+  expireTrash(lib);
   store.replaceLibrary(lib, { resetHistory: true });
   restoreSelection(lib);
   store.setMeta({ loaded: true, saveState: "saved" });

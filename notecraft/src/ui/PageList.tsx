@@ -3,6 +3,7 @@ import { useState } from "react";
 import * as ops from "../model/ops.ts";
 import { store, useStore } from "../store/store.ts";
 import { deletePage, newPage, selectPage } from "../store/actions.ts";
+import { copyPageLink } from "../store/links.ts";
 import { Icon } from "./icons.tsx";
 
 const short = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" });
@@ -13,6 +14,7 @@ export function PageList() {
   const section = useStore((s) => (s.ui.sectionId ? ops.findSection(s.lib, s.ui.sectionId)?.section : undefined));
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
+  const [menuFor, setMenuFor] = useState<string | null>(null);
 
   if (!section || !sectionId) return <aside className="pagelist" />;
 
@@ -21,9 +23,14 @@ export function PageList() {
       <header className="pagelist-head">
         <span className="section-tab" style={{ background: section.color }} />
         <h2 title={section.source ? `Imported from ${section.source.file}` : undefined}>{section.name}</h2>
-        <button className="btn-add-page" onClick={() => newPage()} title="Add page">
-          <Icon.plus width={16} height={16} /> Page
-        </button>
+        <span className="split-btn">
+          <button className="btn-add-page" onClick={() => newPage()} title="Add page">
+            <Icon.plus width={16} height={16} /> Page
+          </button>
+          <button className="btn-add-page split-caret" onClick={() => store.setUi({ dialog: { kind: "templates" } })} title="New page from a template" aria-label="Page templates">
+            <Icon.chevron width={14} height={14} />
+          </button>
+        </span>
       </header>
       <ol className="pages" onDragLeave={() => setDropIndex(null)}>
         {section.pages.map((p, i) => (
@@ -67,10 +74,19 @@ export function PageList() {
                   <Icon.subpage width={16} height={16} />
                 </button>
               )}
-              <button className="icon-btn" title="Delete page" aria-label="Delete page" onClick={() => deletePage(p.id)}>
-                <Icon.trash width={16} height={16} />
+              <button className="icon-btn" title="More" aria-label={`${p.title || "Untitled page"} options`} onClick={() => setMenuFor(menuFor === p.id ? null : p.id)}>
+                <Icon.more width={16} height={16} />
               </button>
             </span>
+            {menuFor === p.id && (
+              <div className="menu page-menu" role="menu" onMouseLeave={() => setMenuFor(null)}>
+                <button onClick={() => (void copyPageLink(p.id), setMenuFor(null))}><Icon.link width={16} height={16} /> Copy link to page</button>
+                <button onClick={() => (store.setUi({ dialog: { kind: "movePage", pageId: p.id } }), setMenuFor(null))}><Icon.move width={16} height={16} /> Move or copy…</button>
+                <button onClick={() => (selectPage(p.id), newPage({ asSubpage: true }), setMenuFor(null))}><Icon.subpage width={16} height={16} /> New subpage</button>
+                <hr />
+                <button className="danger" onClick={() => (deletePage(p.id), setMenuFor(null))}><Icon.trash width={16} height={16} /> Delete page</button>
+              </div>
+            )}
           </li>
         ))}
         {dropIndex === section.pages.length && <li className="drop-end" />}

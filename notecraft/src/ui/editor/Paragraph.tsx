@@ -9,6 +9,8 @@ import { insertImageFiles, pasteLines } from "../../store/actions.ts";
 import { autoLink, caretOnEdgeLine, domToRuns, getCaretOffset, runsToHtml, setCaretOffset, textLength } from "../../lib/richtext.ts";
 import { revealRect } from "../canvasApi.ts";
 import { TagGutter } from "./TagGutter.tsx";
+import { tagByShortcut, tagHighlight } from "../../model/tags.ts";
+import { followLink, linkPagesByTitle, pageLinkHtml } from "../../store/links.ts";
 import { LAYOUT } from "../../model/types.ts";
 import { useReadOnly } from "./readOnly.ts";
 
@@ -61,6 +63,19 @@ export const Paragraph = memo(function Paragraph({ el, listRef, marker, prevId, 
     const node = ref.current;
     if (!node) return;
     const runs = domToRuns(node);
+    // [[Page title]] links to that page (created if it doesn't exist), as in OneNote.
+    if (runs.some((r) => !r.href && r.text.includes("]]"))) {
+      const at = getCaretOffset(node) ?? 0;
+      const linked = store.edit((d) => {
+        const res = linkPagesByTitle(d, listRef.pageId, runs);
+        ops.setRuns(d, listRef, el.id, res.runs);
+        return res;
+      });
+      if (linked.changed) {
+        store.focus(el.id, Math.max(0, at - linked.removedBefore(at)));
+        return;
+      }
+    }
     renderedKey.current = JSON.stringify(runs);
     store.edit((d) => ops.setRuns(d, listRef, el.id, runs), { coalesce: `text:${el.id}` });
     revealCaret(node);
@@ -127,6 +142,15 @@ export const Paragraph = memo(function Paragraph({ el, listRef, marker, prevId, 
       node.blur();
       return;
     }
+    // OneNote: Alt+Shift+D date, Alt+Shift+T time, Alt+Shift+F date and time.
+    if (e.altKey && e.shiftKey && !m && (e.code === "KeyD" || e.code === "KeyT" || e.code === "KeyF")) {
+      e.preventDefault();
+      const now = new Date();
+      const date = now.toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+      const time = now.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+      document.execCommand("insertText", false, e.code === "KeyD" ? date : e.code === "KeyT" ? time : `${date} ${time}`);
+      return;
+    }
     if (!m) return;
 
     // OneNote shortcuts (Ctrl on Windows, ⌘ here).
@@ -142,9 +166,12 @@ export const Paragraph = memo(function Paragraph({ el, listRef, marker, prevId, 
       const n = Number(code.slice(5));
       return setStyle(n === 0 ? "p" : (`h${n}` as ParagraphStyle));
     }
-    if (!e.altKey && !e.shiftKey && (k === "1" || k === "2" || k === "3")) {
+    if (!e.altKey && !e.shiftKey && /^Digit[0-9]$/.test(code)) {
+      const n = Number(code.slice(5));
       e.preventDefault();
-      return tag(k === "1" ? "todo" : k === "2" ? "important" : "question");
+      if (n === 0) return void edit((d) => ops.clearTags(d, listRef, el.id));
+      const def = tagByShortcut(n);
+      return def ? tag(def.id) : undefined;
     }
     if (k === "k") {
       e.preventDefault();
@@ -168,6 +195,8 @@ export const Paragraph = memo(function Paragraph({ el, listRef, marker, prevId, 
     const text = e.clipboardData.getData("text/plain");
     if (!text) return;
     e.preventDefault();
+    const pageLink = pageLinkHtml(text.trim());
+    if (pageLink) return void document.execCommand("insertHTML", false, pageLink);
     const lines = text.replace(/\r\n?/g, "\n").split("\n");
     if (lines.length === 1) document.execCommand("insertText", false, text);
     else {
@@ -184,11 +213,14 @@ export const Paragraph = memo(function Paragraph({ el, listRef, marker, prevId, 
   };
 
   const indentPx = el.depth * LAYOUT.indent;
+  const iconTags = el.tags ?? [];
+  const checkable = iconTags.filter((t) => t.done !== undefined);
+  const allDone = checkable.length > 0 && checkable.every((t) => t.done);
   return (
-    <div className={`oe oe-text s-${el.style}${el.tag?.done ? " is-done" : ""}`} style={{ paddingLeft: indentPx }} data-el={el.id}>
-      {(marker || el.tag) && (
+    <div className={`oe oe-text s-${el.style}${allDone ? " is-done" : ""}`} style={{ paddingLeft: indentPx }} data-el={el.id}>
+      {(marker || iconTags.length > 0) && (
         <span className="oe-gutter" contentEditable={false}>
-          {el.tag && <TagGutter tag={el.tag} onToggle={readOnly ? undefined : () => edit((d) => ops.toggleTodoDone(d, listRef, el.id))} />}
+          {iconTags.length > 0 && <TagGutter tags={iconTags} onToggle={readOnly ? undefined : (kind) => edit((d) => ops.toggleTagDone(d, listRef, el.id, kind))} />}
           {marker && <span className="oe-marker">{marker}</span>}
         </span>
       )}
@@ -206,6 +238,15 @@ export const Paragraph = memo(function Paragraph({ el, listRef, marker, prevId, 
         onPaste={onPaste}
         onBlur={onBlur}
         onFocus={() => store.setUi({ active: { ref: listRef, elementId: el.id } })}
+        onClick={(e) => {
+          const a = (e.target as HTMLElement).closest("a");
+          // Links open on click, as in OneNote; ⌥-click puts the caret in the link text instead.
+          if (a && !e.altKey && window.getSelection()?.isCollapsed) {
+            e.preventDefault();
+            followLink(a.getAttribute("href") ?? "");
+          }
+        }}
+        style={{ textAlign: el.align, ...(tagHighlight(el.tags) ? { background: tagHighlight(el.tags), color: "#1d1f23" } : {}) }}
       />
     </div>
   );

@@ -1,8 +1,10 @@
 // Pure editing operations on an (immer draft of the) Library. Behaviour follows
 // OneNote where the analysis showed how the data is shaped; see the comments.
 import type {
+  Alignment,
   Element,
   FloatingImage,
+  InkStroke,
   Id,
   ImageData,
   Library,
@@ -13,9 +15,12 @@ import type {
   Page,
   PageLevel,
   ParagraphEl,
+  PageTemplate,
+  PaperStyle,
   ParagraphStyle,
   Run,
   Section,
+  SectionGroup,
   TableEl,
   TagKind,
 } from "./types.ts";
@@ -23,6 +28,7 @@ import { LAYOUT } from "./types.ts";
 import { newId, nowIso } from "../lib/id.ts";
 import { normalizeRuns, splitRuns, textLength } from "../lib/richtext.ts";
 import { defaultList } from "./lists.ts";
+import { tagDefById } from "./tags.ts";
 
 export const SECTION_COLORS = ["#4f7cac", "#c46a2f", "#5b8c5a", "#9a5fb0", "#c2464f", "#3c9a9a", "#b08a2e", "#6b6f80"];
 
@@ -213,7 +219,7 @@ export function deleteOutline(lib: Library, pageId: Id, outlineId: Id): void {
 }
 
 export function outlineIsEmpty(o: Outline): boolean {
-  return o.elements.every((e) => e.kind === "text" && textLength(e.runs) === 0 && !e.tag);
+  return o.elements.every((e) => e.kind === "text" && textLength(e.runs) === 0 && !e.tags?.length);
 }
 
 // --- paragraphs ---------------------------------------------------------------------
@@ -232,14 +238,14 @@ export function setRuns(lib: Library, ref: ListRef, elId: Id, runs: Run[]): void
 
 /**
  * Enter: split at the caret. The new paragraph keeps depth, list and an
- * unchecked copy of the tag; headings hand over to "p" (OneNote's NextStyle).
+ * unchecked copy of its tags; headings hand over to "p" (OneNote's NextStyle).
  * Enter on an empty list item ends the list, then outdents.
  */
 export function splitParagraph(lib: Library, ref: ListRef, elId: Id, offset: number): { focusId: Id; offset: number } {
   const list = getList(lib, ref)!;
   const i = indexIn(list, elId);
   const el = list[i] as ParagraphEl;
-  if (textLength(el.runs) === 0 && (el.list || el.depth > 0) && !el.tag) {
+  if (textLength(el.runs) === 0 && (el.list || el.depth > 0) && !el.tags?.length) {
     if (el.list) delete el.list;
     else outdent(lib, ref, elId);
     return { focusId: elId, offset: 0 };
@@ -250,7 +256,8 @@ export function splitParagraph(lib: Library, ref: ListRef, elId: Id, offset: num
     depth: el.depth,
     style: el.style.startsWith("h") ? "p" : el.style,
     ...(el.list ? { list: el.list } : {}),
-    ...(el.tag ? { tag: { ...el.tag, done: false } } : {}),
+    ...(el.tags?.length ? { tags: el.tags.map((t) => (t.done === undefined ? { ...t } : { ...t, done: false })) } : {}),
+    ...(el.align ? { align: el.align } : {}),
   });
   // Splitting at the very start keeps the new (empty) line above, like a word processor.
   if (offset === 0 && after.length) {
@@ -271,8 +278,8 @@ export function backspaceAtStart(lib: Library, ref: ListRef, elId: Id): { focusI
     delete el.list;
     return { focusId: elId, offset: 0 };
   }
-  if (el.tag) {
-    delete el.tag;
+  if (el.tags?.length) {
+    delete el.tags;
     return { focusId: elId, offset: 0 };
   }
   if (el.depth > 0) {
@@ -349,20 +356,42 @@ export function toggleList(lib: Library, ref: ListRef, elIds: Id[], kind: ListSt
   touch(lib, ref.pageId);
 }
 
-/** Ctrl+1/2/3 in OneNote apply To Do / Important / Question tags. */
+/** ⌘1–⌘9 / the Tags menu: add the tag, or remove it if the paragraph already has it. */
 export function toggleTag(lib: Library, ref: ListRef, elId: Id, kind: TagKind): void {
   const el = getList(lib, ref)?.find((e) => e.id === elId);
   if (!el) return;
-  if (el.tag?.kind === kind) delete el.tag;
-  else el.tag = { kind, ...(kind === "todo" ? { done: false } : {}) };
+  const tags = el.tags ?? [];
+  if (tags.some((t) => t.kind === kind)) {
+    el.tags = tags.filter((t) => t.kind !== kind);
+    if (!el.tags.length) delete el.tags;
+  } else {
+    el.tags = [...tags, { kind, ...(tagDefById(kind)?.check ? { done: false } : {}) }];
+  }
+  touch(lib, ref.pageId);
+}
+
+/** ⌘0: remove all tags. */
+export function clearTags(lib: Library, ref: ListRef, elId: Id): void {
+  const el = getList(lib, ref)?.find((e) => e.id === elId);
+  if (!el?.tags) return;
+  delete el.tags;
   touch(lib, ref.pageId);
 }
 
 /** ActionItemStatus bit 0: completed. */
-export function toggleTodoDone(lib: Library, ref: ListRef, elId: Id): void {
+export function toggleTagDone(lib: Library, ref: ListRef, elId: Id, kind: TagKind): void {
+  const tag = getList(lib, ref)?.find((e) => e.id === elId)?.tags?.find((t) => t.kind === kind);
+  if (!tag || tag.done === undefined) return;
+  tag.done = !tag.done;
+  touch(lib, ref.pageId);
+}
+
+/** ParagraphAlignment. */
+export function setAlignment(lib: Library, ref: ListRef, elId: Id, align: Alignment): void {
   const el = getList(lib, ref)?.find((e) => e.id === elId);
-  if (!el?.tag) return;
-  el.tag.done = !el.tag.done;
+  if (el?.kind !== "text") return;
+  if (align === "left") delete el.align;
+  else el.align = align;
   touch(lib, ref.pageId);
 }
 
@@ -421,10 +450,11 @@ export function findTable(lib: Library, pageId: Id, outlineId: Id, tableId: Id):
   return findOutline(lib, pageId, outlineId)?.elements.find((e): e is TableEl => e.id === tableId && e.kind === "table");
 }
 
-export function addTableRow(lib: Library, pageId: Id, outlineId: Id, tableId: Id, afterRowId?: Id): Id | undefined {
+/** Add a row after `afterRowId` (default: at the end), or at the top with `atStart`. */
+export function addTableRow(lib: Library, pageId: Id, outlineId: Id, tableId: Id, afterRowId?: Id, atStart = false): Id | undefined {
   const t = findTable(lib, pageId, outlineId, tableId);
   if (!t) return;
-  const i = afterRowId ? t.rows.findIndex((r) => r.id === afterRowId) : t.rows.length - 1;
+  const i = atStart ? -1 : afterRowId ? t.rows.findIndex((r) => r.id === afterRowId) : t.rows.length - 1;
   const row = { id: newId("r"), cells: t.columns.map(() => ({ id: newId("c"), elements: [paragraph()] as Element[] })) };
   t.rows.splice(i + 1, 0, row);
   touch(lib, pageId);
@@ -510,4 +540,246 @@ export function pageText(page: Page): string {
   page.outlines.forEach((o) => walk(o.elements));
   page.images.forEach((i) => parts.push(i.ocrText ?? i.alt ?? ""));
   return parts.join("\n");
+}
+
+// --- copying -----------------------------------------------------------------------
+
+/** Deep copy of a page with fresh ids (Copy page, templates). */
+export function clonePage(page: Page, overrides: Partial<Page> = {}): Page {
+  const copy: Page = JSON.parse(JSON.stringify(page));
+  const now = nowIso();
+  const fresh = (els: Element[]) => {
+    for (const e of els) {
+      e.id = newId(e.kind === "table" ? "t" : "e");
+      if (e.kind === "table") {
+        for (const r of e.rows) {
+          r.id = newId("r");
+          for (const c of r.cells) {
+            c.id = newId("c");
+            fresh(c.elements);
+          }
+        }
+      }
+    }
+  };
+  copy.id = newId("p");
+  copy.createdAt = now;
+  copy.modifiedAt = now;
+  for (const o of copy.outlines) {
+    o.id = newId("o");
+    fresh(o.elements);
+  }
+  for (const i of copy.images) i.id = newId("i");
+  for (const k of copy.ink ?? []) k.id = newId("k");
+  return Object.assign(copy, overrides);
+}
+
+// --- section groups ------------------------------------------------------------------
+
+export function createSectionGroup(lib: Library, notebookId: Id, name = "New Section Group", parentId?: Id): SectionGroup {
+  const nb = lib.notebooks.find((n) => n.id === notebookId)!;
+  const group: SectionGroup = { id: newId("g"), name, ...(parentId ? { parentId } : {}) };
+  (nb.groups ??= []).push(group);
+  return group;
+}
+
+export function renameSectionGroup(lib: Library, groupId: Id, name: string): void {
+  for (const nb of lib.notebooks) {
+    const g = nb.groups?.find((x) => x.id === groupId);
+    if (g && name.trim()) g.name = name.trim();
+  }
+}
+
+export function toggleGroupCollapsed(lib: Library, groupId: Id): void {
+  for (const nb of lib.notebooks) {
+    const g = nb.groups?.find((x) => x.id === groupId);
+    if (g) g.collapsed = !g.collapsed;
+  }
+}
+
+/** Deleting a group keeps its contents: sections and subgroups move up a level. */
+export function deleteSectionGroup(lib: Library, groupId: Id): void {
+  for (const nb of lib.notebooks) {
+    const g = nb.groups?.find((x) => x.id === groupId);
+    if (!g) continue;
+    for (const s of nb.sections) if (s.groupId === groupId) g.parentId ? (s.groupId = g.parentId) : delete s.groupId;
+    for (const sub of nb.groups!) if (sub.parentId === groupId) g.parentId ? (sub.parentId = g.parentId) : delete sub.parentId;
+    nb.groups = nb.groups!.filter((x) => x.id !== groupId);
+  }
+}
+
+/**
+ * Move a section (drag in the sidebar, or "Move or Copy Section"): into another
+ * notebook and/or group, before `beforeSectionId` or at the end.
+ */
+export function moveSection(lib: Library, sectionId: Id, to: { notebookId: Id; groupId?: Id; beforeSectionId?: Id }): void {
+  const hit = findSection(lib, sectionId);
+  if (!hit || to.beforeSectionId === sectionId) return;
+  hit.notebook.sections = hit.notebook.sections.filter((s) => s.id !== sectionId);
+  const target = lib.notebooks.find((n) => n.id === to.notebookId)!;
+  const section = hit.section;
+  if (to.groupId) section.groupId = to.groupId;
+  else delete section.groupId;
+  const at = to.beforeSectionId ? target.sections.findIndex((s) => s.id === to.beforeSectionId) : -1;
+  if (at >= 0) target.sections.splice(at, 0, section);
+  else target.sections.push(section);
+  if (!hit.notebook.sections.length) hit.notebook.sections.push(emptySection("New Section", SECTION_COLORS[0]!));
+}
+
+// --- move / copy pages ---------------------------------------------------------------------
+
+/** "Move or Copy Pages": the page (and its subpages) go to the end of another section. Returns the (new) page id. */
+export function movePageToSection(lib: Library, pageId: Id, sectionId: Id, copy = false): Id | undefined {
+  const hit = findPage(lib, pageId);
+  const target = findSection(lib, sectionId)?.section;
+  if (!hit || !target) return;
+  const pages = hit.section.pages;
+  const i = pages.indexOf(hit.page);
+  let j = i + 1;
+  while (j < pages.length && pages[j]!.level > hit.page.level) j++;
+  const family = pages.slice(i, j);
+  const base = family[0]!.level - 1;
+  const moved = family.map((p) => {
+    const out = copy ? clonePage(p) : p;
+    return Object.assign(out, { level: Math.max(1, p.level - base) as PageLevel });
+  });
+  if (!copy) {
+    if (hit.section === target) return hit.page.id;
+    pages.splice(i, j - i);
+    if (!pages.length) pages.push(emptyPage());
+  }
+  target.pages.push(...moved);
+  return moved[0]!.id;
+}
+
+// --- Deleted Notes -----------------------------------------------------------------------
+
+export const TRASH_DAYS = 60;
+
+export function trashPage(lib: Library, pageId: Id): void {
+  const hit = findPage(lib, pageId);
+  if (!hit) return;
+  (hit.notebook.trash ??= []).unshift({ kind: "page", page: hit.page, sectionId: hit.section.id, sectionName: hit.section.name, deletedAt: nowIso() });
+  hit.section.pages = hit.section.pages.filter((p) => p.id !== pageId);
+  if (!hit.section.pages.length) hit.section.pages.push(emptyPage());
+}
+
+export function trashSection(lib: Library, sectionId: Id): void {
+  const hit = findSection(lib, sectionId);
+  if (!hit) return;
+  (hit.notebook.trash ??= []).unshift({ kind: "section", section: hit.section, deletedAt: nowIso() });
+  hit.notebook.sections = hit.notebook.sections.filter((s) => s.id !== sectionId);
+  if (!hit.notebook.sections.length) hit.notebook.sections.push(emptySection("New Section", SECTION_COLORS[0]!));
+}
+
+/** Put an item back where it was (or into the first section if that section is gone). Returns the restored page or section id. */
+export function restoreFromTrash(lib: Library, notebookId: Id, index: number): Id | undefined {
+  const nb = lib.notebooks.find((n) => n.id === notebookId);
+  const item = nb?.trash?.[index];
+  if (!nb || !item) return;
+  nb.trash!.splice(index, 1);
+  if (item.kind === "section") {
+    nb.sections.push(item.section);
+    return item.section.id;
+  }
+  const section = nb.sections.find((s) => s.id === item.sectionId) ?? nb.sections[0]!;
+  section.pages.push({ ...item.page, level: 1 });
+  return item.page.id;
+}
+
+export function purgeTrash(lib: Library, notebookId: Id, index?: number): void {
+  const nb = lib.notebooks.find((n) => n.id === notebookId);
+  if (!nb?.trash) return;
+  if (index === undefined) nb.trash = [];
+  else nb.trash.splice(index, 1);
+}
+
+/** Items older than TRASH_DAYS are removed for good, as in OneNote. */
+export function expireTrash(lib: Library, now = Date.now()): void {
+  const cutoff = now - TRASH_DAYS * 86_400_000;
+  for (const nb of lib.notebooks) {
+    if (nb.trash?.some((t) => Date.parse(t.deletedAt) < cutoff)) nb.trash = nb.trash.filter((t) => Date.parse(t.deletedAt) >= cutoff);
+  }
+}
+
+// --- ink, paper, title ----------------------------------------------------------------------
+
+export function addInkStroke(lib: Library, pageId: Id, stroke: InkStroke): void {
+  const hit = findPage(lib, pageId);
+  if (!hit) return;
+  (hit.page.ink ??= []).push(stroke);
+  touch(lib, pageId);
+}
+
+export function removeInkStrokes(lib: Library, pageId: Id, ids: Id[]): void {
+  const hit = findPage(lib, pageId);
+  if (!hit?.page.ink) return;
+  hit.page.ink = hit.page.ink.filter((k) => !ids.includes(k.id));
+  touch(lib, pageId);
+}
+
+export function setPaper(lib: Library, pageId: Id, patch: Partial<PaperStyle>): void {
+  const hit = findPage(lib, pageId);
+  if (!hit) return;
+  const next = { ...hit.page.paper, ...patch };
+  for (const k of Object.keys(next) as (keyof PaperStyle)[]) if (next[k] === undefined) delete next[k];
+  hit.page.paper = next;
+  touch(lib, pageId);
+}
+
+export function setHideTitle(lib: Library, pageId: Id, hide: boolean): void {
+  const hit = findPage(lib, pageId);
+  if (!hit) return;
+  if (hide) hit.page.hideTitle = true;
+  else delete hit.page.hideTitle;
+}
+
+// --- templates --------------------------------------------------------------------------------
+
+export function saveTemplate(lib: Library, name: string, page: Page): PageTemplate {
+  const t: PageTemplate = { id: newId("tp"), name, page: clonePage(page) };
+  (lib.templates ??= []).push(t);
+  return t;
+}
+
+export function deleteTemplate(lib: Library, templateId: Id): void {
+  lib.templates = (lib.templates ?? []).filter((t) => t.id !== templateId);
+}
+
+export function createPageFromTemplate(lib: Library, sectionId: Id, template: Page, afterPageId?: Id): Page {
+  const page = createPage(lib, sectionId, afterPageId);
+  const fresh = clonePage(template, { id: page.id, level: page.level });
+  Object.assign(page, fresh);
+  return page;
+}
+
+// --- more table commands (OneNote Table tab) -----------------------------------------------
+
+export function setTableBorders(lib: Library, pageId: Id, outlineId: Id, tableId: Id, borders: boolean): void {
+  const t = findTable(lib, pageId, outlineId, tableId);
+  if (!t) return;
+  t.borders = borders;
+  touch(lib, pageId);
+}
+
+export function setCellShading(lib: Library, ref: Extract<ListRef, { tableId: Id }>, color: string | null): void {
+  const cell = findTable(lib, ref.pageId, ref.outlineId, ref.tableId)?.rows.find((r) => r.id === ref.rowId)?.cells.find((c) => c.id === ref.cellId);
+  if (!cell) return;
+  if (color) cell.shading = color;
+  else delete cell.shading;
+  touch(lib, ref.pageId);
+}
+
+/** Sort rows by a column's text; a first row that looks like a header stays on top. */
+export function sortTable(lib: Library, pageId: Id, outlineId: Id, tableId: Id, col: number): void {
+  const t = findTable(lib, pageId, outlineId, tableId);
+  if (!t || col < 0 || t.rows.length < 2) return;
+  const text = (r: TableEl["rows"][number]) =>
+    (r.cells[col]?.elements ?? []).map((e) => (e.kind === "text" ? e.runs.map((x) => x.text).join("") : "")).join(" ").trim();
+  const isHeader = t.rows[0]!.cells.every((c) => c.elements.every((e) => e.kind !== "text" || e.runs.every((r) => r.b)));
+  const head = isHeader ? t.rows.slice(0, 1) : [];
+  const body = (isHeader ? t.rows.slice(1) : t.rows).slice();
+  body.sort((a, b) => text(a).localeCompare(text(b), undefined, { numeric: true, sensitivity: "base" }));
+  t.rows = [...head, ...body];
+  touch(lib, pageId);
 }

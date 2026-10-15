@@ -7,6 +7,9 @@ import { Toolbar } from "./Toolbar.tsx";
 import { PageCanvas, useActivePage } from "./PageCanvas.tsx";
 import { SearchPanel } from "./SearchPanel.tsx";
 import { PreviewBanner, VersionsPanel } from "./VersionsPanel.tsx";
+import { TagsPanel } from "./TagsPanel.tsx";
+import { Dialogs } from "./Dialogs.tsx";
+import { FindBar } from "./FindBar.tsx";
 import { canvasApi } from "./canvasApi.ts";
 import { mod } from "./editor/Paragraph.tsx";
 
@@ -28,13 +31,21 @@ function useGlobalShortcuts() {
       } else if (k === "e") {
         e.preventDefault();
         store.setUi({ searchOpen: true });
+      } else if (k === "f" && !e.shiftKey) {
+        e.preventDefault();
+        store.setUi({ findOpen: true });
+      } else if (k === "f" && e.shiftKey) {
+        // OneNote's full page view toggle.
+        e.preventDefault();
+        store.setUi({ fullPage: !store.getState().ui.fullPage });
       } else if (k === "=" || k === "+" || e.code === "Equal" || e.code === "NumpadAdd") {
         e.preventDefault();
         canvasApi.current?.zoomIn();
       } else if (k === "-" || e.code === "Minus" || e.code === "NumpadSubtract") {
         e.preventDefault();
         canvasApi.current?.zoomOut();
-      } else if ((k === "0" || e.code === "Digit0") && !e.altKey) {
+      } else if ((k === "0" || e.code === "Digit0") && !e.altKey && !(e.target as HTMLElement).closest?.(".oe-editable")) {
+        // In a paragraph ⌘0 removes tags (OneNote); elsewhere it resets zoom.
         e.preventDefault();
         canvasApi.current?.setZoom(1);
       }
@@ -74,7 +85,10 @@ export function App() {
   const loaded = useStore((s) => s.loaded);
   const searchOpen = useStore((s) => s.ui.searchOpen);
   const page = useActivePage();
-  const versionsOpen = useStore((s) => s.ui.versionsOpen);
+  const sidePanel = useStore((s) => s.ui.sidePanel);
+  const fullPage = useStore((s) => s.ui.fullPage);
+  const findOpen = useStore((s) => s.ui.findOpen);
+  const drawing = useStore((s) => s.ui.draw.tool !== "type");
   const preview = useStore((s) => (s.ui.preview && s.ui.preview.pageId === s.ui.pageId ? s.ui.preview : null));
   const [dragging, setDragging] = useState(false);
   useGlobalShortcuts();
@@ -83,7 +97,7 @@ export function App() {
 
   return (
     <div
-      className="app"
+      className={`app${fullPage ? " is-full-page" : ""}${drawing ? " is-drawing" : ""}`}
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes("Files")) {
           e.preventDefault();
@@ -99,10 +113,11 @@ export function App() {
         void importFiles(files);
       }}
     >
-      <Sidebar />
-      <PageList />
+      {!fullPage && <Sidebar />}
+      {!fullPage && <PageList />}
       <main className="workspace">
         <Toolbar />
+        {findOpen && <FindBar />}
         {preview && <PreviewBanner version={preview.version} />}
         <div className="workspace-body">
           {page ? (
@@ -114,10 +129,12 @@ export function App() {
           ) : (
             <div className="empty-state">Choose or add a page.</div>
           )}
-          {versionsOpen && page && <VersionsPanel page={page} />}
+          {sidePanel === "versions" && page && <VersionsPanel page={page} />}
+          {sidePanel === "tags" && <TagsPanel />}
         </div>
       </main>
       {searchOpen && <SearchPanel />}
+      <Dialogs />
       {dragging && <div className="drop-hint">Drop .one files to import them as sections</div>}
       <Toast />
     </div>

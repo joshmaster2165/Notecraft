@@ -30,6 +30,8 @@ export type Id = string;
 export interface Library {
   version: 1;
   notebooks: Notebook[];
+  /** "Save as Template" pages, offered when adding a page. */
+  templates?: PageTemplate[];
 }
 
 export interface Notebook {
@@ -38,6 +40,28 @@ export interface Notebook {
   color: string;
   createdAt: string;
   sections: Section[];
+  /** Section groups ("New Section Group"); sections point at them with groupId. */
+  groups?: SectionGroup[];
+  /** "Deleted Notes": deleted pages and sections, restorable for 60 days. */
+  trash?: TrashItem[];
+}
+
+export interface SectionGroup {
+  id: Id;
+  name: string;
+  /** Groups nest inside other groups. */
+  parentId?: Id;
+  collapsed?: boolean;
+}
+
+export type TrashItem =
+  | { kind: "page"; page: Page; sectionId: Id; sectionName: string; deletedAt: string }
+  | { kind: "section"; section: Section; deletedAt: string };
+
+export interface PageTemplate {
+  id: Id;
+  name: string;
+  page: Page;
 }
 
 export interface Section {
@@ -46,6 +70,7 @@ export interface Section {
   color: string;
   createdAt: string;
   pages: Page[];
+  groupId?: Id;
   /** Set when the section came from a .one file. */
   source?: { file: string; guidFile?: string; importedAt: string };
 }
@@ -61,6 +86,30 @@ export interface Page {
   author?: string;
   outlines: Outline[];
   images: FloatingImage[];
+  /** Pen and highlighter strokes (Draw tab; OneNote's InkContainer 0x60047). */
+  ink?: InkStroke[];
+  /** View > Paper Style: page color and rule/grid lines. */
+  paper?: PaperStyle;
+  /** View > Hide Page Title. */
+  hideTitle?: boolean;
+}
+
+export type RuleLines = "none" | "narrow" | "standard" | "college" | "grid-small" | "grid-medium" | "grid-large";
+
+export interface PaperStyle {
+  color?: string;
+  rule?: RuleLines;
+  ruleColor?: string;
+}
+
+export interface InkStroke {
+  id: Id;
+  tool: "pen" | "highlighter";
+  color: string;
+  /** Points at zoom 1. */
+  width: number;
+  /** Flat [x0, y0, x1, y1, …] in page points. */
+  points: number[];
 }
 
 export interface Outline {
@@ -98,7 +147,8 @@ export type ListStyle =
   | { kind: "bullet"; glyph: string }
   | { kind: "numbered"; scheme: NumberScheme; prefix?: string; suffix: string; start?: number };
 
-export type TagKind = "todo" | "important" | "question" | "custom";
+/** A tag id from the catalog in tags.ts ("todo", "important", "idea", …) or "custom". */
+export type TagKind = string;
 
 export interface NoteTag {
   kind: TagKind;
@@ -111,13 +161,18 @@ interface ElementBase {
   /** OutlineElementChildLevel - 1; 0 is the top level of the outline. */
   depth: number;
   list?: ListStyle;
-  tag?: NoteTag;
+  /** NoteTagStates: a paragraph can carry several tags. */
+  tags?: NoteTag[];
 }
+
+export type Alignment = "left" | "center" | "right";
 
 export interface ParagraphEl extends ElementBase {
   kind: "text";
   style: ParagraphStyle;
   runs: Run[];
+  /** ParagraphAlignment 0x0C003477. */
+  align?: Alignment;
 }
 
 export interface TableCell {

@@ -1,29 +1,39 @@
 import type { NoteTag } from "../../model/types.ts";
-import { Icon } from "../icons.tsx";
+import { tagDef, tagLabel } from "../../model/tags.ts";
+import { TagIcon } from "./TagIcon.tsx";
 
-/** Note tag glyphs (NoteTagShape): To Do checkbox, Important star, Question mark. */
-export function TagGutter({ tag, onToggle }: { tag: NoteTag; onToggle?: () => void }) {
-  if (tag.kind === "todo") {
-    return (
-      <button
-        type="button"
-        className={`tag tag-todo${tag.done ? " is-checked" : ""}`}
-        role="checkbox"
-        aria-checked={!!tag.done}
-        aria-label={tag.done ? "Mark as not done" : "Mark as done"}
-        disabled={!onToggle}
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={onToggle}
-      >
-        {tag.done && <Icon.check width={12} height={12} strokeWidth={2.4} />}
-      </button>
-    );
-  }
-  if (tag.kind === "important") return <Icon.star className="tag tag-important" width={15} height={15} aria-label="Important" />;
-  if (tag.kind === "question") return <Icon.question className="tag tag-question" width={15} height={15} aria-label="Question" />;
+/** Tag icons in front of a paragraph. Checkable tags toggle; highlight tags show no icon (the line is tinted). */
+export function TagGutter({ tags, onToggle }: { tags: NoteTag[]; onToggle?: (kind: string) => void }) {
   return (
-    <span className="tag tag-custom" title={tag.label}>
-      {tag.label?.slice(0, 1) ?? "•"}
-    </span>
+    <>
+      {tags.map((tag) => {
+        const def = tagDef(tag);
+        if (def.highlight) return null;
+        const label = tagLabel(tag);
+        if (tag.done !== undefined) {
+          return (
+            <button
+              key={tag.kind}
+              type="button"
+              className="tag tag-check"
+              role="checkbox"
+              aria-checked={tag.done}
+              aria-label={`${label}: ${tag.done ? "done" : "not done"}`}
+              title={label}
+              disabled={!onToggle}
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => onToggle?.(tag.kind)}
+            >
+              <TagIcon def={def} done={tag.done} />
+            </button>
+          );
+        }
+        return (
+          <span key={tag.kind} className="tag" title={label} role="img" aria-label={label}>
+            <TagIcon def={def} />
+          </span>
+        );
+      })}
+    </>
   );
 }

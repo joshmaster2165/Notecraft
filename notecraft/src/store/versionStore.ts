@@ -5,6 +5,7 @@ import type { Element, Id, Page, PageVersion, VersionReason } from "../model/typ
 import { MAX_VERSIONS_PER_PAGE, hashString, pageSignature, pruneIds } from "../model/versions.ts";
 import { batch, get, getAllByIndex } from "../lib/idb.ts";
 import { newId, nowIso } from "../lib/id.ts";
+import { migratePage } from "../model/migrate.ts";
 
 interface StoredVersion extends PageVersion {
   sig: string;
@@ -68,7 +69,7 @@ export async function listVersions(pageId: Id): Promise<PageVersion[]> {
 
 export async function loadVersion(id: Id): Promise<PageVersion | undefined> {
   const v = await get<StoredVersion>("versions", id);
-  return v ? { ...v, page: await hydrate(v.page) } : undefined;
+  return v ? { ...v, page: migratePage(await hydrate(v.page)) } : undefined;
 }
 
 // --- writes -------------------------------------------------------------------------------

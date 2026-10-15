@@ -60,9 +60,9 @@ export function seedLibrary(): Library {
     ]),
     outline(560, LAYOUT.bodyY, 400, [
       p("Try it", { style: "h3" }),
-      p("Import a .one section from the sidebar", { tag: { kind: "todo", done: false } }),
-      p("Create a subpage with the → button in the page list", { tag: { kind: "todo", done: false } }),
-      p("Pinch to zoom out and see the whole page", { tag: { kind: "todo", done: true } }),
+      p("Import a .one section from the sidebar", { tags: [{ kind: "todo", done: false }] }),
+      p("Create a subpage with the → button in the page list", { tags: [{ kind: "todo", done: false }] }),
+      p("Pinch to zoom out and see the whole page", { tags: [{ kind: "todo", done: true }] }),
       p("Links work: https://learn.microsoft.com/openspecs/office_file_formats/ms-one", {}),
     ]),
     outline(560, 300, 400, [p("Keyboard", { style: "h3" }), shortcutTable()]),

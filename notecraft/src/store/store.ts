@@ -15,6 +15,18 @@ export interface ActiveParagraph {
   elementId: Id;
 }
 
+export type DrawTool = "type" | "pen" | "highlighter" | "eraser";
+export interface DrawState {
+  tool: DrawTool;
+  penColor: string;
+  penWidth: number;
+  highlighterColor: string;
+  highlighterWidth: number;
+}
+
+export type SidePanel = "versions" | "tags" | null;
+export type Dialog = { kind: "movePage"; pageId: Id } | { kind: "moveSection"; sectionId: Id } | { kind: "templates" } | { kind: "trash" } | null;
+
 export interface UiState {
   notebookId: Id | null;
   sectionId: Id | null;
@@ -22,7 +34,15 @@ export interface UiState {
   focus: FocusRequest | null;
   active: ActiveParagraph | null;
   searchOpen: boolean;
-  versionsOpen: boolean;
+  /** Right-hand pane: page versions or the Find Tags summary. */
+  sidePanel: SidePanel;
+  /** Draw tab tool; "type" is normal editing. */
+  draw: DrawState;
+  /** View > Full Page View hides the notebook and page lists. */
+  fullPage: boolean;
+  /** ⌘F find-on-page bar. */
+  findOpen: boolean;
+  dialog: Dialog;
   /** A historical version shown read-only in place of the live page. */
   preview: { pageId: Id; version: PageVersion } | null;
   zoomAnchor: ZoomAnchor;
@@ -57,7 +77,22 @@ class Store {
   constructor() {
     this.state = {
       lib: { version: 1, notebooks: [] },
-      ui: { notebookId: null, sectionId: null, pageId: null, focus: null, active: null, searchOpen: false, versionsOpen: false, preview: null, zoomAnchor: "viewportOrigin", toast: null },
+      ui: {
+        notebookId: null,
+        sectionId: null,
+        pageId: null,
+        focus: null,
+        active: null,
+        searchOpen: false,
+        sidePanel: null,
+        draw: { tool: "type", penColor: "#1f3a5f", penWidth: 2, highlighterColor: "#ffe14d", highlighterWidth: 14 },
+        fullPage: false,
+        findOpen: false,
+        dialog: null,
+        preview: null,
+        zoomAnchor: "viewportOrigin",
+        toast: null,
+      },
       loaded: false,
       saveState: "saved",
       canUndo: false,

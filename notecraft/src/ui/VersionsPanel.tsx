@@ -63,7 +63,7 @@ export function VersionsPanel({ page }: { page: Page }) {
       <header className="versions-head">
         <Icon.history />
         <h2>Page versions</h2>
-        <button className="icon-btn" aria-label="Close page versions" onClick={() => store.setUi({ versionsOpen: false, preview: null })}>
+        <button className="icon-btn" aria-label="Close page versions" onClick={() => store.setUi({ sidePanel: null, preview: null })}>
           <Icon.close />
         </button>
       </header>

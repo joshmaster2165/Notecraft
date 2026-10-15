@@ -50,6 +50,17 @@ export const Icon = {
   notebook: (p: P) => <svg {...base(p)}><rect x="4.5" y="3" width="11" height="14" rx="1.5" /><path d="M7.5 3v14M3 6.5h3M3 10h3M3 13.5h3" /></svg>,
   history: (p: P) => <svg {...base(p)}><path d="M3.5 10a6.5 6.5 0 1 0 1.9-4.6" /><path d="M3 3.5v3h3" /><path d="M10 6.5V10l2.5 1.8" /></svg>,
   close: (p: P) => <svg {...base(p)}><path d="m5.5 5.5 9 9m0-9-9 9" /></svg>,
+  pen: (p: P) => <svg {...base(p)}><path d="m13.5 3.5 3 3-9 9-4 1 1-4z" /><path d="m11.5 5.5 3 3" /></svg>,
+  eraser: (p: P) => <svg {...base(p)}><path d="m8 16.5-4-4 8.5-8.5 5 5L11 15.5H17" /><path d="m7.5 8.5 5 5" /></svg>,
+  alignLeft: (p: P) => <svg {...base(p)}><path d="M3 5h14M3 8.5h9M3 12h14M3 15.5h9" /></svg>,
+  alignCenter: (p: P) => <svg {...base(p)}><path d="M3 5h14M5.5 8.5h9M3 12h14M5.5 15.5h9" /></svg>,
+  alignRight: (p: P) => <svg {...base(p)}><path d="M3 5h14M8 8.5h9M3 12h14M8 15.5h9" /></svg>,
+  fullPage: (p: P) => <svg {...base(p)}><path d="M3.5 7.5v-4h4M16.5 7.5v-4h-4M3.5 12.5v4h4M16.5 12.5v4h-4" /></svg>,
+  ruled: (p: P) => <svg {...base(p)}><rect x="3.5" y="3" width="13" height="14" rx="1.5" /><path d="M3.5 7h13M3.5 10.5h13M3.5 14h13" /></svg>,
+  folder: (p: P) => <svg {...base(p)}><path d="M3 6.5V15a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 17 15V8a1.5 1.5 0 0 0-1.5-1.5H10L8.3 4.5H4.5A1.5 1.5 0 0 0 3 6z" /></svg>,
+  copy: (p: P) => <svg {...base(p)}><rect x="7" y="7" width="10" height="10" rx="1.5" /><path d="M13 7V4.5A1.5 1.5 0 0 0 11.5 3h-7A1.5 1.5 0 0 0 3 4.5v7A1.5 1.5 0 0 0 4.5 13H7" /></svg>,
+  move: (p: P) => <svg {...base(p)}><path d="M4 10h11M11.5 6.5 15 10l-3.5 3.5" /></svg>,
+  restore: (p: P) => <svg {...base(p)}><path d="M4 9a6 6 0 1 1 1.7 4.2" /><path d="M3.5 4.5V9H8" /></svg>,
   check: (p: P) => <svg {...base(p)}><path d="m5 10.5 3 3 7-7" /></svg>,
 };
 

@@ -4,6 +4,8 @@ import { LAYOUT } from "../model/types.ts";
 import * as ops from "../model/ops.ts";
 import { importOneFile, type ImportResult } from "../model/importOne.ts";
 import { listMarkers } from "../model/lists.ts";
+import { tagLabel } from "../model/tags.ts";
+import { migrateLibrary } from "../model/migrate.ts";
 import { normalizeRuns, splitRuns, textLength } from "../lib/richtext.ts";
 import { newId } from "../lib/id.ts";
 import { store } from "./store.ts";
@@ -87,27 +89,94 @@ export function deletePage(pageId: Id) {
   const pages = hit.section.pages;
   const i = pages.indexOf(hit.page);
   const neighbour = pages[i + 1] ?? pages[i - 1];
-  store.edit((d) => {
-    ops.deletePage(d, pageId);
-    const s = ops.findSection(d, hit.section.id)?.section;
-    if (s && !s.pages.length) s.pages.push(ops.emptyPage());
-  });
+  store.edit((d) => ops.trashPage(d, pageId));
   const s = ops.findSection(lib(), hit.section.id)?.section;
   selectPage(neighbour?.id ?? s!.pages[0]!.id);
-  store.toast(`Deleted “${hit.page.title || "Untitled page"}” · ⌘Z to undo`);
+  store.toast(`Moved “${hit.page.title || "Untitled page"}” to Deleted Notes · ⌘Z to undo`);
 }
 
 export function deleteSection(sectionId: Id) {
   const hit = ops.findSection(lib(), sectionId);
   if (!hit) return;
-  store.edit((d) => {
-    ops.deleteSection(d, sectionId);
-    const nb = d.notebooks.find((n) => n.id === hit.notebook.id);
-    if (nb && !nb.sections.length) nb.sections.push(ops.emptySection("New Section", ops.SECTION_COLORS[0]!));
-  });
+  store.edit((d) => ops.trashSection(d, sectionId));
   const nb = lib().notebooks.find((n) => n.id === hit.notebook.id)!;
   selectSection(nb.sections[0]!.id);
-  store.toast(`Deleted section “${hit.section.name}” · ⌘Z to undo`);
+  store.toast(`Moved section “${hit.section.name}” to Deleted Notes · ⌘Z to undo`);
+}
+
+// --- Deleted Notes, move/copy, groups, templates ----------------------------------------------
+
+export function restoreFromTrash(notebookId: Id, index: number) {
+  const id = store.edit((d) => ops.restoreFromTrash(d, notebookId, index));
+  if (!id) return;
+  if (ops.findPage(lib(), id)) selectPage(id);
+  else selectSection(id);
+  store.toast("Restored from Deleted Notes");
+}
+
+export function movePage(pageId: Id, sectionId: Id, copy: boolean) {
+  const id = store.edit((d) => ops.movePageToSection(d, pageId, sectionId, copy));
+  if (!id) return;
+  const hit = ops.findPage(lib(), id);
+  selectPage(id);
+  store.toast(`${copy ? "Copied" : "Moved"} “${hit?.page.title || "Untitled page"}” to ${hit?.section.name ?? "the section"}`);
+}
+
+export function moveSectionTo(sectionId: Id, notebookId: Id, groupId?: Id) {
+  store.edit((d) => ops.moveSection(d, sectionId, { notebookId, ...(groupId ? { groupId } : {}) }));
+  selectSection(sectionId);
+}
+
+export function newSectionGroup(parentId?: Id) {
+  const { notebookId } = store.getState().ui;
+  if (!notebookId) return;
+  return store.edit((d) => ops.createSectionGroup(d, notebookId, "New Section Group", parentId)).id;
+}
+
+export function newPageFromTemplate(template: Page) {
+  const { sectionId, pageId } = store.getState().ui;
+  if (!sectionId) return;
+  const page = store.edit((d) => ops.createPageFromTemplate(d, sectionId, template, pageId ?? undefined));
+  selectPage(page.id);
+}
+
+export function saveCurrentPageAsTemplate(name: string) {
+  const page = currentPage();
+  if (!page || !name.trim()) return;
+  store.edit((d) => ops.saveTemplate(d, name.trim(), page));
+  store.toast(`Saved “${name.trim()}” as a template`);
+}
+
+/** Insert > File. OneNote refuses very large attachments; so does Notecraft. */
+export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+
+export function insertAttachments(files: File[], target: { ref: ListRef; afterId: Id } | { pageId: Id; x: number; y: number }) {
+  for (const file of files) {
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      store.toast(`“${file.name}” is larger than 25 MB, so it wasn't attached.`);
+      continue;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const el = { id: newId("e"), kind: "file" as const, depth: 0, name: file.name, size: file.size, src: String(reader.result) };
+      store.edit((d) => {
+        if ("ref" in target) ops.insertAfter(d, target.ref, target.afterId, el);
+        else ops.createOutline(d, target.pageId, target.x, target.y, el);
+      });
+    };
+    reader.readAsDataURL(file);
+  }
+}
+
+/** Print the current page (the system dialog also offers Save as PDF). */
+export function printPage() {
+  document.body.classList.add("is-printing");
+  const done = () => {
+    document.body.classList.remove("is-printing");
+    window.removeEventListener("afterprint", done);
+  };
+  window.addEventListener("afterprint", done);
+  setTimeout(() => window.print(), 50);
 }
 
 // --- editing helpers used by the canvas ---------------------------------------------
@@ -216,6 +285,7 @@ async function importLibraryJson(file: File) {
     // "onecraft" is the format key used before the app was renamed.
     const data = JSON.parse(await file.text()) as Library | { notecraft?: 1; onecraft?: 1; notebook: Library["notebooks"][number] };
     if (("notecraft" in data || "onecraft" in data) && "notebook" in data && data.notebook) {
+      migrateLibrary({ version: 1, notebooks: [data.notebook] });
       store.edit((d) => {
         d.notebooks.push(data.notebook);
       });
@@ -263,10 +333,11 @@ function elementsToMarkdown(els: Element[]): string[] {
     if (e.kind === "text") {
       const text = runsToMarkdown(e.runs);
       const h = /^h([1-6])$/.exec(e.style);
-      const tag = e.tag?.kind === "todo" ? (e.tag.done ? "[x] " : "[ ] ") : e.tag ? `(${e.tag.label ?? e.tag.kind}) ` : "";
+      const check = e.tags?.find((t) => t.done !== undefined);
+      const tag = [check ? (check.done ? "[x] " : "[ ] ") : "", ...(e.tags ?? []).filter((t) => t !== check).map((t) => `(${tagLabel(t)}) `)].join("");
       if (h) return [`${"#".repeat(Number(h[1]) + 1)} ${text}`];
       if (e.list) return [`${pad}${e.list.kind === "bullet" ? "-" : markers[i]} ${tag}${text}`];
-      if (e.tag?.kind === "todo") return [`${pad}- ${tag}${text}`];
+      if (check) return [`${pad}- ${tag}${text}`];
       return [`${pad}${tag}${text}`];
     }
     if (e.kind === "table") {

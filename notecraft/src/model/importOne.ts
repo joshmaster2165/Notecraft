@@ -17,6 +17,7 @@ import { LAYOUT } from "./types.ts";
 import { newId, nowIso } from "../lib/id.ts";
 import { normalizeRuns } from "../lib/richtext.ts";
 import { paragraph, SECTION_COLORS } from "./ops.ts";
+import { tagFromLabel } from "./tags.ts";
 
 export interface ImportResult {
   section: Section;
@@ -56,6 +57,9 @@ export function importOneFile(bytes: Uint8Array, fileName: string): ImportResult
     if (s.subscript) out.sub = true;
     if (s.highlight) out.highlight = s.highlight;
     if (s.color) out.color = s.color;
+    // Keep fonts and sizes only where they differ from OneNote's default (Calibri 11).
+    if (s.font && s.font !== "Calibri") out.font = s.font;
+    if (s.fontSize && s.fontSize !== 11) out.size = s.fontSize;
     if (r.href) out.href = r.href;
     return out;
   };
@@ -68,13 +72,8 @@ export function importOneFile(bytes: Uint8Array, fileName: string): ImportResult
     return { kind: "numbered", scheme, suffix: l.suffix ?? "", ...(l.prefix ? { prefix: l.prefix } : {}), ...(l.restart ? { start: l.restart } : {}) };
   };
 
-  const tagOf = (tags: OneNoteTag[] | undefined): NoteTag | undefined => {
-    const t = tags?.[0];
-    if (!t) return undefined;
-    const label = (t.label ?? "").toLowerCase();
-    const kind = label.includes("to do") ? "todo" : label.includes("important") ? "important" : label.includes("question") ? "question" : "custom";
-    return { kind, ...(t.label && kind === "custom" ? { label: t.label } : {}), ...(t.completed !== undefined ? { done: t.completed } : {}) };
-  };
+  // NoteTagStates → catalog tags, matched by NoteTagLabel.
+  const tagsOf = (tags: OneNoteTag[] | undefined): NoteTag[] | undefined => (tags?.length ? tags.map((t) => tagFromLabel(t.label, t.completed)) : undefined);
 
   const imageOf = (b: ImageBlock) => {
     stats.images++;
@@ -94,11 +93,11 @@ export function importOneFile(bytes: Uint8Array, fileName: string): ImportResult
   const flatten = (els: OutlineElementBlock[], depth: number, out: Element[]) => {
     for (const oe of els) {
       const list = listOf(oe.list);
-      const tag = tagOf(oe.tags);
+      const tags = tagsOf(oe.tags);
       const contents: ContentBlock[] = oe.content.length ? oe.content : [];
       let first = true;
       const common = () => {
-        const c = { depth, ...(first && list ? { list } : {}), ...(first && tag ? { tag } : {}) };
+        const c = { depth, ...(first && list ? { list } : {}), ...(first && tags ? { tags } : {}) };
         first = false;
         return c;
       };
@@ -108,7 +107,8 @@ export function importOneFile(bytes: Uint8Array, fileName: string): ImportResult
           stats.paragraphs++;
           const styleId = c.paragraph.styleId?.toLowerCase();
           const style = (styleId && PARAGRAPH_STYLES.has(styleId) ? styleId : "p") as ParagraphStyle;
-          out.push(paragraph(normalizeRuns(c.runs.map(runOf)), { ...common(), style }));
+          const align = c.paragraph.alignment && c.paragraph.alignment !== "left" ? { align: c.paragraph.alignment } : {};
+          out.push(paragraph(normalizeRuns(c.runs.map(runOf)), { ...common(), style, ...align }));
         } else if (c.type === "table") {
           stats.tables++;
           out.push({
