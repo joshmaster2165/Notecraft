@@ -6,6 +6,8 @@ from the binary and file-format analysis in [`../../onenote-re`](../../onenote-r
 
 ✅ done · 🟡 partial · ⬜ not yet · — not applicable to a local-first app
 
+**54 of 67 done**, 5 partial, 7 not yet, 1 not applicable.
+
 ## Organize
 
 | OneNote | Notecraft | Notes |
@@ -15,7 +17,7 @@ from the binary and file-format analysis in [`../../onenote-re`](../../onenote-r
 | Section Groups (nested) | ✅ | Drag a section onto a group; "Ungroup" keeps sections |
 | Pages, subpages (3 levels), reorder | ✅ | `PageLevel`; drag to reorder |
 | Move or Copy Pages | ✅ | Subpages travel with their page |
-| Move Section / Section Group | 🟡 | Sections move between notebooks and groups; groups can't be moved yet |
+| Move Section / Section Group | ✅ | Groups move with their subgroups and sections |
 | Deleted Notes (60 days) | ✅ | Restore, delete permanently, empty |
 | Page Templates (built-in + Save as Template) | ✅ | 7 built-ins plus your own |
 | Page Versions | ✅ | Notecraft snapshots plus OneNote's own history on import |
@@ -31,31 +33,31 @@ from the binary and file-format analysis in [`../../onenote-re`](../../onenote-r
 | Font, font size, font color, highlight color | ✅ | OneNote's size list and highlight palette |
 | Clear formatting | ✅ | |
 | Styles: Heading 1–6, Quote, Code, Normal | ✅ | Next paragraph after a heading reverts to Normal (`NextStyle`) |
-| Citation, Page Title style | 🟡 | The page title is its own field; no Citation style |
+| Citation, Page Title style | ✅ | Citation style; the page title is its own field |
 | Alignment | ✅ | `ParagraphAlignment` |
-| Line spacing, paragraph spacing | ⬜ | Imported spacing isn't applied |
+| Line spacing, paragraph spacing | ✅ | Space before/after and line spacing; imported values are applied |
 | Bullets and numbering (level schemes) | ✅ | • ◦ ▪ and 1. a. i. by level, as OneNote does |
-| Bullet/numbering library, restart numbering | 🟡 | Imported formats render; no picker yet |
+| Bullet/numbering library, restart numbering | ✅ | Restart, set value, continue numbering |
 | Indent / outdent with children | ✅ | |
 | Tags: full catalog, ⌘1–⌘9, ⌘0 | ✅ | All 29 default tags; several per paragraph |
-| Custom tags | 🟡 | Imported custom tags show their label; can't create new ones yet |
+| Custom tags | ✅ | Create, edit and delete; OneNote's own custom tags come in on import |
 | Find Tags (Tags Summary) | ✅ | Section / notebook / all; "only unchecked" filter |
-| Create Summary Page from tags | ⬜ | |
+| Create Summary Page from tags | ✅ | Tagged notes grouped by tag, each linked back to its paragraph |
 | Links: web, auto-detect, Copy Link to Page, `[[Page]]` | ✅ | `[[Title]]` creates the page if missing |
-| Links to sections or paragraphs | ⬜ | |
+| Links to sections or paragraphs | ✅ | Copy link to section / paragraph |
 | Tables: insert, rows/columns above/below/left/right, delete | ✅ | |
 | Table borders, shading, sort, column widths, Tab navigation | ✅ | |
 | Pictures: insert, paste, drop, resize, inline or floating | ✅ | |
-| Picture alt text, rotate, crop | ⬜ | Imported alt text is kept |
+| Picture alt text, rotate, crop | 🟡 | Alt text and rotate; no crop |
 | Text in pictures (OCR) searchable | 🟡 | Imported OCR text is searchable; new pictures aren't OCR'd |
 | File attachments | ✅ | Up to 25 MB |
 | File printouts | ⬜ | |
 | Insert Date / Time / Date and Time | ✅ | ⌥⇧D, ⌥⇧T, ⌥⇧F |
 | Equations, Ink to Math | ⬜ | |
-| Audio and video recording | ⬜ | |
+| Audio and video recording | 🟡 | Audio recording plays in the page; no video |
 | Spell check | ✅ | Operating-system spellchecker |
 | Undo / redo | ✅ | App-wide, typing coalesced |
-| Paste with formatting | 🟡 | Plain-text paste, one paragraph per line |
+| Paste with formatting | ✅ | Keeps emphasis, links, colors, headings and lists; ⌥⇧⌘V pastes plain text |
 
 ## Draw
 
@@ -63,8 +65,8 @@ from the binary and file-format analysis in [`../../onenote-re`](../../onenote-r
 |---|---|---|
 | Pen, highlighter (colors, thickness) | ✅ | Stored in page points, so ink stays on its text at every zoom |
 | Stroke eraser | ✅ | |
-| Lasso select, move ink | ⬜ | |
-| Shapes, Ink to Shape, Ink to Text | ⬜ | Imported ink isn't decoded yet (`InkContainer 0x60047`) |
+| Lasso select, move ink | ✅ | Drag to move, Delete to remove |
+| Shapes, Ink to Shape, Ink to Text | 🟡 | Line, arrow, rectangle, ellipse; no handwriting recognition. Imported ink isn't decoded yet (`InkContainer 0x60047`) |
 | Pressure sensitivity | ⬜ | |
 
 ## View
@@ -84,7 +86,7 @@ from the binary and file-format analysis in [`../../onenote-re`](../../onenote-r
 | OneNote | Notecraft | Notes |
 |---|---|---|
 | Search all notebooks | ✅ | ⌘E: titles, text, table cells, OCR text |
-| Search scope (this section / notebook) | 🟡 | Always searches everything |
+| Search scope (this section / notebook) | ✅ | This section / this notebook / all notebooks |
 | Find on page | ✅ | ⌘F, with match highlighting |
 
 ## Import, export, print

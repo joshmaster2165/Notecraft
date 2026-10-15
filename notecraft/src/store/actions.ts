@@ -1,5 +1,5 @@
 // App-level actions: selection, CRUD with sensible focus, import/export.
-import type { Element, Id, Library, ListRef, Page, Run } from "../model/types.ts";
+import type { Element, Id, Library, ListRef, NoteTag, Page, Run } from "../model/types.ts";
 import { LAYOUT } from "../model/types.ts";
 import * as ops from "../model/ops.ts";
 import { importNotebookJson, importOneFile, type ImportResult } from "../model/importOne.ts";
@@ -9,6 +9,8 @@ import { tagLabel } from "../model/tags.ts";
 import { migrateLibrary } from "../model/migrate.ts";
 import { normalizeRuns, splitRuns, textLength } from "../lib/richtext.ts";
 import { newId } from "../lib/id.ts";
+import type { PastedBlock } from "../lib/paste.ts";
+import { pageHref } from "./links.ts";
 import { store } from "./store.ts";
 import { addImportedVersions } from "./versionStore.ts";
 import { persistSelection } from "./persist.ts";
@@ -220,6 +222,89 @@ export function pasteLines(ref: ListRef, elId: Id, offset: number, lines: string
   if (result) store.focus(result.id, result.offset);
 }
 
+export interface SummaryItem {
+  tag: NoteTag;
+  text: string;
+  pageId: Id;
+  pageTitle: string;
+  elementId: Id;
+}
+
+/**
+ * Find Tags › "Create Summary Page": a new page in the current section listing
+ * every tagged note under its tag, each with a link back to where it lives.
+ */
+export function createTagSummaryPage(groups: [string, SummaryItem[]][]) {
+  const sectionId = store.getState().ui.sectionId;
+  if (!sectionId || !groups.length) return;
+  const pageId = store.edit((d) => {
+    const page = ops.createPage(d, sectionId);
+    page.title = "Tags Summary";
+    const els: Element[] = [ops.paragraph([{ text: `Created ${new Date().toLocaleString()}`, i: true, color: "#727780" }])];
+    for (const [, items] of groups) {
+      els.push(ops.paragraph([{ text: tagLabel(items[0]!.tag) }], { style: "h2" }));
+      for (const h of items) {
+        const text = h.text.trim() || "(empty line)";
+        els.push(
+          ops.paragraph(normalizeRuns([{ text }, { text: "  " }, { text: h.pageTitle, href: pageHref(h.pageId, h.elementId), color: "#727780" }]), {
+            tags: [{ ...h.tag }],
+          }),
+        );
+      }
+    }
+    page.outlines.push({ id: newId("o"), x: LAYOUT.bodyX, y: LAYOUT.bodyY, width: 620, widthSetByUser: true, elements: els });
+    return page.id;
+  });
+  selectPage(pageId);
+  store.toast("Created a Tags Summary page in this section.");
+}
+
+/**
+ * Paste with formatting. Plain text joins the paragraph at the caret; headings
+ * and list items start their own paragraphs. Text after the caret follows the
+ * last pasted block.
+ */
+export function pasteBlocks(ref: ListRef, elId: Id, offset: number, blocks: PastedBlock[]) {
+  if (!blocks.length) return;
+  const result = store.edit((d) => {
+    const list = ops.getList(d, ref)!;
+    const i = list.findIndex((e) => e.id === elId);
+    const el = list[i];
+    if (el?.kind !== "text") return null;
+    const [before, after] = splitRuns(el.runs, offset);
+    const first = blocks[0]!;
+    const structured = !!(first.style || first.list);
+    if (blocks.length === 1 && !structured) {
+      el.runs = normalizeRuns([...before, ...first.runs, ...after]);
+      return { id: el.id, offset: textLength(before) + textLength(first.runs) };
+    }
+    // Into an empty line, the first block takes over that paragraph.
+    const reuse = !textLength(before) && !textLength(after);
+    const mergeFirst = !structured || reuse;
+    const rest = mergeFirst ? blocks.slice(1) : blocks;
+    if (mergeFirst) {
+      el.runs = normalizeRuns([...before, ...first.runs, ...(rest.length ? [] : after)]);
+      if (reuse) {
+        el.style = first.style ?? "p";
+        if (first.list) el.list = first.list;
+        else delete el.list;
+        el.depth += first.depth ?? 0;
+      }
+    } else el.runs = normalizeRuns(before);
+    const added: Element[] = rest.map((b, k) =>
+      ops.paragraph(normalizeRuns(k === rest.length - 1 ? [...b.runs, ...after] : b.runs), {
+        depth: el.depth + (b.depth ?? 0) - (reuse ? first.depth ?? 0 : 0),
+        style: b.style ?? "p",
+        ...(b.list ? { list: b.list } : {}),
+      }),
+    );
+    list.splice(i + 1, 0, ...added);
+    const last = added[added.length - 1];
+    return last ? { id: last.id, offset: textLength(rest[rest.length - 1]!.runs) } : { id: el.id, offset: textLength(el.runs) };
+  });
+  if (result) store.focus(result.id, result.offset);
+}
+
 export function insertImageFiles(files: File[], target: { ref: ListRef; afterId: Id } | { pageId: Id; x: number; y: number }) {
   for (const file of files) {
     if (!file.type.startsWith("image/")) continue;
@@ -263,6 +348,7 @@ export async function importFiles(files: File[]) {
     store.edit((d) => {
       const nb = d.notebooks.find((n) => n.id === notebookId) ?? d.notebooks[0]!;
       nb.sections.push(...results.map((r) => r.section));
+      ops.mergeCustomTags(d, results.flatMap((r) => r.customTags));
     });
     selectSection(results[0]!.section.id);
     const history = results.flatMap((r) => r.versions);
@@ -404,6 +490,7 @@ export async function importOneNoteNotebooks(
     store.edit((d) => {
       const nb = ops.createNotebook(d, pick.notebook);
       nb.sections = results.map((r) => r.section);
+      ops.mergeCustomTags(d, results.flatMap((r) => r.customTags));
     });
     firstSection ??= results[0]!.section.id;
     for (const r of results) {

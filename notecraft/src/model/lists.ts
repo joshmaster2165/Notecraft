@@ -59,7 +59,8 @@ export function listMarkers(elements: Element[]): (string | null)[] {
       counters[el.depth] = 0;
       return GLYPH_FIXUPS[list.glyph] ?? list.glyph;
     }
-    const n = counters[el.depth] ? counters[el.depth]! + 1 : list.start ?? 1;
+    // An explicit start restarts numbering ("Restart numbering at"), as in OneNote.
+    const n = list.start ?? (counters[el.depth] ? counters[el.depth]! + 1 : 1);
     counters[el.depth] = n;
     return `${list.prefix ?? ""}${formatNumber(n, list.scheme)}${list.suffix}`;
   });

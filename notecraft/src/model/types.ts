@@ -32,6 +32,18 @@ export interface Library {
   notebooks: Notebook[];
   /** "Save as Template" pages, offered when adding a page. */
   templates?: PageTemplate[];
+  /** Customize Tags: user-defined tags, including ones imported from OneNote. */
+  customTags?: CustomTagDef[];
+}
+
+export interface CustomTagDef {
+  /** "custom:<lowercased label>", so the same tag from different imports merges. */
+  id: string;
+  label: string;
+  shape: "checkbox" | "star" | "question" | "highlight" | "person" | "house" | "phone" | "globe" | "bulb" | "key" | "alert" | "letter" | "film" | "book" | "music" | "doc" | "pen" | "envelope" | "calendar";
+  color: string;
+  check?: boolean;
+  highlight?: string;
 }
 
 export interface Notebook {
@@ -110,6 +122,8 @@ export interface InkStroke {
   width: number;
   /** Flat [x0, y0, x1, y1, …] in page points. */
   points: number[];
+  /** Drawn with a shape tool: straight segments, no smoothing. */
+  shape?: boolean;
 }
 
 export interface Outline {
@@ -138,7 +152,7 @@ export interface Run {
   href?: string;
 }
 
-export type ParagraphStyle = "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "quote" | "code";
+export type ParagraphStyle = "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "quote" | "code" | "cite";
 
 /** MSONFC numbering schemes decoded from NumberListFormat. */
 export type NumberScheme = "decimal" | "upperRoman" | "lowerRoman" | "upperLetter" | "lowerLetter";
@@ -173,6 +187,11 @@ export interface ParagraphEl extends ElementBase {
   runs: Run[];
   /** ParagraphAlignment 0x0C003477. */
   align?: Alignment;
+  /** ParagraphSpaceBefore / ParagraphSpaceAfter, points. */
+  spaceBefore?: number;
+  spaceAfter?: number;
+  /** ParagraphLineSpacingExact: "line spacing at least", points. */
+  lineSpacing?: number;
 }
 
 export interface TableCell {

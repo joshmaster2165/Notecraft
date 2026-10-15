@@ -3,7 +3,10 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import * as ops from "../model/ops.ts";
 import { TRASH_DAYS } from "../model/ops.ts";
 import { BUILTIN_TEMPLATES } from "../model/templates.ts";
-import { store, useStore } from "../store/store.ts";
+import { customTagId, tagDef, type TagShape } from "../model/tags.ts";
+import type { CustomTagDef, Notebook } from "../model/types.ts";
+import { TagIcon } from "./editor/TagIcon.tsx";
+import { store, useStore, type PromptDialog as PromptDialogState } from "../store/store.ts";
 import { importOneNoteNotebooks, movePage, moveSectionTo, newPageFromTemplate, restoreFromTrash, saveCurrentPageAsTemplate, type OneNoteImportProgress } from "../store/actions.ts";
 import { desktop, type FoundNotebook } from "../desktop.ts";
 import { Icon } from "./icons.tsx";
@@ -69,12 +72,48 @@ function MovePageDialog({ pageId }: { pageId: string }) {
   );
 }
 
+type MoveTarget = { notebookId: string; groupId?: string };
+
+/** Notebooks and their section groups, indented; `exclude` hides a group being moved and its subgroups. */
+function GroupPicker({ target, setTarget, exclude }: { target: MoveTarget | null; setTarget: (t: MoveTarget) => void; exclude?: Set<string> }) {
+  const lib = useStore((s) => s.lib);
+  const key = (t: MoveTarget) => `${t.notebookId}/${t.groupId ?? ""}`;
+  const depthOf = (nb: Notebook, id?: string): number => {
+    let d = 0;
+    for (let g = nb.groups?.find((x) => x.id === id); g; g = nb.groups?.find((x) => x.id === g!.parentId)) d++;
+    return d;
+  };
+  return (
+    <div className="pick-list">
+      {lib.notebooks.map((nb) => {
+        const ordered: MoveTarget[] = [{ notebookId: nb.id }];
+        const add = (parent?: string) => {
+          for (const g of nb.groups ?? []) {
+            if ((g.parentId ?? undefined) !== parent || exclude?.has(g.id)) continue;
+            ordered.push({ notebookId: nb.id, groupId: g.id });
+            add(g.id);
+          }
+        };
+        add(undefined);
+        return ordered.map((o) => {
+          const depth = depthOf(nb, o.groupId);
+          const label = o.groupId ? nb.groups!.find((g) => g.id === o.groupId)!.name : nb.name;
+          return (
+            <button key={key(o)} className={`pick-item${target && key(target) === key(o) ? " is-on" : ""}`} style={{ paddingLeft: 10 + depth * 16 }} onClick={() => setTarget(o)}>
+              {depth === 0 ? <Icon.notebook width={15} height={15} /> : <Icon.folder width={15} height={15} />} {label}
+            </button>
+          );
+        });
+      })}
+    </div>
+  );
+}
+
 function MoveSectionDialog({ sectionId }: { sectionId: string }) {
   const lib = useStore((s) => s.lib);
   const hit = ops.findSection(lib, sectionId);
-  const [target, setTarget] = useState<{ notebookId: string; groupId?: string } | null>(null);
+  const [target, setTarget] = useState<MoveTarget | null>(null);
   if (!hit) return null;
-  const key = (t: { notebookId: string; groupId?: string }) => `${t.notebookId}/${t.groupId ?? ""}`;
   return (
     <Modal
       title={`Move “${hit.section.name}”`}
@@ -87,16 +126,71 @@ function MoveSectionDialog({ sectionId }: { sectionId: string }) {
       }
     >
       <p className="dialog-note">Move section into a notebook or section group:</p>
-      <div className="pick-list">
-        {lib.notebooks.map((nb) => {
-          const options = [{ notebookId: nb.id, label: nb.name, depth: 0 }, ...(nb.groups ?? []).map((g) => ({ notebookId: nb.id, groupId: g.id, label: g.name, depth: g.parentId ? 2 : 1 }))];
-          return options.map((o) => (
-            <button key={key(o)} className={`pick-item${target && key(target) === key(o) ? " is-on" : ""}`} style={{ paddingLeft: 10 + o.depth * 16 }} onClick={() => setTarget(o)}>
-              {o.depth === 0 ? <Icon.notebook width={15} height={15} /> : <Icon.folder width={15} height={15} />} {o.label}
-            </button>
-          ));
-        })}
-      </div>
+      <GroupPicker target={target} setTarget={setTarget} />
+    </Modal>
+  );
+}
+
+function MoveGroupDialog({ groupId }: { groupId: string }) {
+  const lib = useStore((s) => s.lib);
+  const nb = lib.notebooks.find((n) => n.groups?.some((g) => g.id === groupId));
+  const group = nb?.groups?.find((g) => g.id === groupId);
+  const [target, setTarget] = useState<MoveTarget | null>(null);
+  if (!nb || !group) return null;
+  const family = ops.groupFamily(nb, groupId);
+  return (
+    <Modal
+      title={`Move “${group.name}”`}
+      onClose={close}
+      footer={
+        <>
+          <span className="tb-spacer" />
+          <button
+            className="btn btn-primary"
+            disabled={!target}
+            onClick={() => {
+              store.edit((d) => ops.moveSectionGroup(d, groupId, { notebookId: target!.notebookId, ...(target!.groupId ? { parentId: target!.groupId } : {}) }));
+              close();
+            }}
+          >
+            Move
+          </button>
+        </>
+      }
+    >
+      <p className="dialog-note">Move the section group, with its sections and groups, into:</p>
+      <GroupPicker target={target} setTarget={setTarget} exclude={family} />
+    </Modal>
+  );
+}
+
+function PromptDialog({ dialog }: { dialog: PromptDialogState }) {
+  const [value, setValue] = useState(dialog.value);
+  const finish = (v: string | null) => {
+    close();
+    dialog.resolve(v);
+  };
+  return (
+    <Modal
+      title={dialog.title}
+      onClose={() => finish(null)}
+      footer={
+        <>
+          <span className="tb-spacer" />
+          <button className="btn" onClick={() => finish(null)}>Cancel</button>
+          <button className="btn btn-primary" onClick={() => finish(value)}>OK</button>
+        </>
+      }
+    >
+      <label className="prompt-field">
+        {dialog.label}
+        <input
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onFocus={(e) => e.currentTarget.select()}
+          onKeyDown={(e) => e.key === "Enter" && finish(value)}
+        />
+      </label>
     </Modal>
   );
 }
@@ -263,12 +357,95 @@ function OneNoteImportDialog() {
   );
 }
 
+const SHAPES: TagShape[] = ["checkbox", "star", "question", "highlight", "letter", "alert", "person", "house", "phone", "globe", "bulb", "key", "film", "book", "music", "doc", "pen", "envelope", "calendar"];
+const TAG_COLORS = ["#3a6db0", "#2b7bb9", "#3a9a3a", "#e3a008", "#e07b00", "#c2272d", "#7a4fbf", "#555b66"];
+const TAG_HIGHLIGHTS = ["#fff3a3", "#c8f2c0", "#ffe08a", "#cde4ff", "#ffd6e7"];
+
+/** OneNote's Customize Tags: create and edit your own tags. Imported OneNote tags show up here too. */
+function CustomTagsDialog() {
+  const tags = useStore((s) => s.lib.customTags) ?? NO_CUSTOM;
+  const blank: CustomTagDef = { id: "", label: "", shape: "checkbox", color: TAG_COLORS[0]!, check: true };
+  const [draft, setDraft] = useState<CustomTagDef>(blank);
+  const editing = !!draft.id;
+  const set = (patch: Partial<CustomTagDef>) => setDraft((d) => ({ ...d, ...patch }));
+  const save = () => {
+    const label = draft.label.trim();
+    if (!label) return;
+    const def: CustomTagDef = {
+      ...draft,
+      id: draft.id || customTagId(label),
+      label,
+      ...(draft.shape === "highlight" ? { highlight: draft.highlight ?? TAG_HIGHLIGHTS[0], check: undefined } : { highlight: undefined }),
+    };
+    if (!def.check) delete def.check;
+    if (!def.highlight) delete def.highlight;
+    store.edit((d) => ops.saveCustomTag(d, def));
+    setDraft(blank);
+  };
+  return (
+    <Modal title="Customize Tags" onClose={close}>
+      <p className="dialog-note">Your own tags appear in the Tags menu and in Find Tags. Tags imported from OneNote are listed here too.</p>
+      <ul className="trash-list">
+        {tags.length === 0 && <li className="dialog-note">No custom tags yet.</li>}
+        {tags.map((t) => (
+          <li key={t.id}>
+            <span className="trash-icon"><TagIcon def={tagDef({ kind: t.id, label: t.label })} /></span>
+            <span className="trash-main">
+              <strong>{t.label}</strong>
+              <span className="version-meta">{t.check ? "Checkable" : t.highlight ? "Highlight" : "Icon"}</span>
+            </span>
+            <button className="btn" onClick={() => setDraft(t)}>Edit</button>
+            <button className="icon-btn" aria-label={`Delete tag ${t.label}`} onClick={() => store.edit((d) => ops.deleteCustomTag(d, t.id))}>
+              <Icon.trash width={15} height={15} />
+            </button>
+          </li>
+        ))}
+      </ul>
+      <form className="tag-form" onSubmit={(e) => (e.preventDefault(), save())}>
+        <h3>{editing ? `Edit “${draft.label}”` : "New tag"}</h3>
+        <label>
+          Name
+          <input value={draft.label} onChange={(e) => set({ label: e.target.value })} placeholder="e.g. Follow up" />
+        </label>
+        <div className="tag-form-row" role="group" aria-label="Icon">
+          {SHAPES.map((shape) => (
+            <button type="button" key={shape} className={`tag-shape${draft.shape === shape ? " is-on" : ""}`} aria-label={shape} aria-pressed={draft.shape === shape}
+              onClick={() => set({ shape, check: shape === "checkbox" ? true : draft.check })}>
+              <TagIcon def={{ id: "preview", label: draft.label || "Tag", shape, color: draft.color, ...(shape === "highlight" ? { highlight: draft.highlight ?? TAG_HIGHLIGHTS[0] } : {}), ...(shape === "letter" ? { badge: (draft.label || "T").slice(0, 1).toUpperCase() } : {}) }} />
+            </button>
+          ))}
+        </div>
+        <div className="tag-form-row" role="group" aria-label="Color">
+          {(draft.shape === "highlight" ? TAG_HIGHLIGHTS : TAG_COLORS).map((c) => (
+            <button type="button" key={c} className={`swatch${(draft.shape === "highlight" ? draft.highlight : draft.color) === c ? " is-on" : ""}`} style={{ background: c }} aria-label={c}
+              onClick={() => set(draft.shape === "highlight" ? { highlight: c } : { color: c })} />
+          ))}
+        </div>
+        {draft.shape !== "highlight" && (
+          <label className="tb-check">
+            <input type="checkbox" checked={!!draft.check} onChange={(e) => set({ check: e.target.checked })} /> Has a checkbox (to-do style)
+          </label>
+        )}
+        <div className="tag-form-actions">
+          {editing && <button type="button" className="btn" onClick={() => setDraft(blank)}>Cancel</button>}
+          <button className="btn btn-primary" disabled={!draft.label.trim()}>{editing ? "Save tag" : "Add tag"}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+const NO_CUSTOM: CustomTagDef[] = [];
+
 export function Dialogs() {
   const dialog = useStore((s) => s.ui.dialog);
   if (!dialog) return null;
   if (dialog.kind === "movePage") return <MovePageDialog pageId={dialog.pageId} />;
   if (dialog.kind === "moveSection") return <MoveSectionDialog sectionId={dialog.sectionId} />;
+  if (dialog.kind === "moveGroup") return <MoveGroupDialog groupId={dialog.groupId} />;
+  if (dialog.kind === "prompt") return <PromptDialog dialog={dialog} />;
   if (dialog.kind === "templates") return <TemplatesDialog />;
   if (dialog.kind === "oneNoteImport") return <OneNoteImportDialog />;
+  if (dialog.kind === "customTags") return <CustomTagsDialog />;
   return <TrashDialog />;
 }

@@ -5,7 +5,8 @@ import { memo, useLayoutEffect, useRef, type KeyboardEvent, type ClipboardEvent 
 import type { Id, ListRef, ParagraphEl, ParagraphStyle, TagKind } from "../../model/types.ts";
 import * as ops from "../../model/ops.ts";
 import { store, useStore } from "../../store/store.ts";
-import { insertImageFiles, pasteLines } from "../../store/actions.ts";
+import { insertImageFiles, pasteBlocks, pasteLines } from "../../store/actions.ts";
+import { htmlToBlocks } from "../../lib/paste.ts";
 import { autoLink, caretOnEdgeLine, domToRuns, getCaretOffset, runsToHtml, setCaretOffset, textLength } from "../../lib/richtext.ts";
 import { revealRect } from "../canvasApi.ts";
 import { TagGutter } from "./TagGutter.tsx";
@@ -13,6 +14,7 @@ import { tagByShortcut, tagHighlight } from "../../model/tags.ts";
 import { followLink, linkPagesByTitle, pageLinkHtml } from "../../store/links.ts";
 import { LAYOUT } from "../../model/types.ts";
 import { useReadOnly } from "./readOnly.ts";
+import { askText } from "../prompt.ts";
 
 export interface CellNav {
   next(): void;
@@ -38,6 +40,7 @@ export const Paragraph = memo(function Paragraph({ el, listRef, marker, prevId, 
   const readOnly = useReadOnly();
   const ref = useRef<HTMLDivElement>(null);
   const renderedKey = useRef<string | null>(null);
+  const pastePlain = useRef(false);
   const focusReq = useStore((s) => (s.ui.focus?.elementId === el.id ? s.ui.focus : null));
 
   // Sync model -> DOM only when the runs differ from what the DOM already shows.
@@ -98,6 +101,8 @@ export const Paragraph = memo(function Paragraph({ el, listRef, marker, prevId, 
     if (e.nativeEvent.isComposing) return;
     const node = ref.current!;
     const m = mod(e);
+    // ⌥⇧⌘V: Paste and Match Style.
+    pastePlain.current = m && e.shiftKey && e.code === "KeyV";
 
     if (e.key === "Enter" && !e.shiftKey && !m) {
       e.preventDefault();
@@ -175,7 +180,7 @@ export const Paragraph = memo(function Paragraph({ el, listRef, marker, prevId, 
     }
     if (k === "k") {
       e.preventDefault();
-      return promptLink();
+      return void promptLink();
     }
     if (e.shiftKey && k === "h") {
       e.preventDefault();
@@ -193,10 +198,20 @@ export const Paragraph = memo(function Paragraph({ el, listRef, marker, prevId, 
       return;
     }
     const text = e.clipboardData.getData("text/plain");
-    if (!text) return;
+    const html = e.clipboardData.getData("text/html");
+    if (!text && !html) return;
     e.preventDefault();
     const pageLink = pageLinkHtml(text.trim());
     if (pageLink) return void document.execCommand("insertHTML", false, pageLink);
+    // ⌥⇧⌘V / "Paste and Match Style" arrives without HTML; keep formatting otherwise.
+    if (html && !pastePlain.current) {
+      const blocks = htmlToBlocks(html);
+      if (blocks.length) {
+        commitDom();
+        return pasteBlocks(listRef, el.id, caret(), blocks);
+      }
+    }
+    pastePlain.current = false;
     const lines = text.replace(/\r\n?/g, "\n").split("\n");
     if (lines.length === 1) document.execCommand("insertText", false, text);
     else {
@@ -246,7 +261,13 @@ export const Paragraph = memo(function Paragraph({ el, listRef, marker, prevId, 
             followLink(a.getAttribute("href") ?? "");
           }
         }}
-        style={{ textAlign: el.align, ...(tagHighlight(el.tags) ? { background: tagHighlight(el.tags), color: "#1d1f23" } : {}) }}
+        style={{
+          textAlign: el.align,
+          marginTop: el.spaceBefore ? `${el.spaceBefore}pt` : undefined,
+          marginBottom: el.spaceAfter ? `${el.spaceAfter}pt` : undefined,
+          lineHeight: el.lineSpacing ? `max(1.4em, ${el.lineSpacing}pt)` : undefined,
+          ...(tagHighlight(el.tags) ? { background: tagHighlight(el.tags), color: "#1d1f23" } : {}),
+        }}
       />
     </div>
   );
@@ -269,11 +290,13 @@ function revealCaret(node: HTMLElement) {
 }
 
 /** ⌘K: wrap the selection in a link (or insert the URL when nothing is selected). */
-export function promptLink() {
+export async function promptLink() {
   const sel = window.getSelection();
   const range = sel && sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
-  const url = window.prompt("Link address", "https://");
+  const existing = (range?.startContainer.parentElement?.closest("a") as HTMLAnchorElement | null)?.getAttribute("href");
+  const url = (await askText("Insert link", "Address", existing ?? "https://"))?.trim();
   if (!url || url === "https://" || !range) return;
+  (range.startContainer.parentElement?.closest("[contenteditable]") as HTMLElement | null)?.focus();
   sel!.removeAllRanges();
   sel!.addRange(range);
   if (range.collapsed) document.execCommand("insertHTML", false, `<a href="${url.replace(/"/g, "&quot;")}">${url.replace(/</g, "&lt;")}</a>`);

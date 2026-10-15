@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import type { Element, Library, NoteTag } from "../model/types.ts";
 import { tagDef, tagLabel, TAGS } from "../model/tags.ts";
 import { store, useStore } from "../store/store.ts";
-import { selectPage } from "../store/actions.ts";
+import { createTagSummaryPage, selectPage } from "../store/actions.ts";
 import { TagIcon } from "./editor/TagIcon.tsx";
 import { Icon } from "./icons.tsx";
 
@@ -85,6 +85,9 @@ export function TagsPanel() {
           <input type="checkbox" checked={openOnly} onChange={(e) => setOpenOnly(e.target.checked)} />
           Show only unchecked items
         </label>
+        <button className="btn" disabled={!groups.length} onClick={() => createTagSummaryPage(groups)}>
+          Create Summary Page
+        </button>
       </div>
       <div className="versions-list">
         {groups.length === 0 && <p className="versions-note">No tagged notes {scope === "section" ? "in this section" : scope === "notebook" ? "in this notebook" : "yet"}. Tag a line with ⌘1–⌘9 or the Tags menu.</p>}

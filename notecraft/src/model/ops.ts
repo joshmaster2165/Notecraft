@@ -15,6 +15,7 @@ import type {
   Page,
   PageLevel,
   ParagraphEl,
+  CustomTagDef,
   PageTemplate,
   PaperStyle,
   ParagraphStyle,
@@ -54,6 +55,23 @@ export function findPage(lib: Library, pageId: Id): { notebook: Notebook; sectio
 
 export function findOutline(lib: Library, pageId: Id, outlineId: Id): Outline | undefined {
   return findPage(lib, pageId)?.page.outlines.find((o) => o.id === outlineId);
+}
+
+/** Any element on a page, including paragraphs inside table cells. */
+export function findElement(page: Page, elementId: Id): Element | undefined {
+  const walk = (els: Element[]): Element | undefined => {
+    for (const e of els) {
+      if (e.id === elementId) return e;
+      if (e.kind === "table") for (const r of e.rows) for (const c of r.cells) {
+        const hit = walk(c.elements);
+        if (hit) return hit;
+      }
+    }
+  };
+  for (const o of page.outlines) {
+    const hit = walk(o.elements);
+    if (hit) return hit;
+  }
 }
 
 export function getList(lib: Library, ref: ListRef): Element[] | undefined {
@@ -365,7 +383,8 @@ export function toggleTag(lib: Library, ref: ListRef, elId: Id, kind: TagKind): 
     el.tags = tags.filter((t) => t.kind !== kind);
     if (!el.tags.length) delete el.tags;
   } else {
-    el.tags = [...tags, { kind, ...(tagDefById(kind)?.check ? { done: false } : {}) }];
+    const def = tagDefById(kind);
+    el.tags = [...tags, { kind, ...(def?.check ? { done: false } : {}), ...(kind.startsWith("custom:") && def ? { label: def.label } : {}) }];
   }
   touch(lib, ref.pageId);
 }
@@ -516,6 +535,14 @@ export function deleteFloatingImage(lib: Library, pageId: Id, imageId: Id): void
   touch(lib, pageId);
 }
 
+export function updateInlineImage(lib: Library, ref: ListRef, elId: Id, patch: Partial<ImageData>): void {
+  const el = getList(lib, ref)?.find((e) => e.id === elId);
+  if (el?.kind !== "image") return;
+  Object.assign(el.image, patch);
+  for (const k of Object.keys(patch) as (keyof ImageData)[]) if (patch[k] === undefined) delete el.image[k];
+  touch(lib, ref.pageId);
+}
+
 export function resizeInlineImage(lib: Library, ref: ListRef, elId: Id, width: number): void {
   const el = getList(lib, ref)?.find((e) => e.id === elId);
   if (el?.kind !== "image") return;
@@ -606,6 +633,37 @@ export function deleteSectionGroup(lib: Library, groupId: Id): void {
     for (const sub of nb.groups!) if (sub.parentId === groupId) g.parentId ? (sub.parentId = g.parentId) : delete sub.parentId;
     nb.groups = nb.groups!.filter((x) => x.id !== groupId);
   }
+}
+
+/** A group and every group nested inside it. */
+export function groupFamily(nb: Notebook, groupId: Id): Set<Id> {
+  const ids = new Set([groupId]);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const g of nb.groups ?? []) if (g.parentId && ids.has(g.parentId) && !ids.has(g.id)) (ids.add(g.id), (grew = true));
+  }
+  return ids;
+}
+
+/** "Move Section Group": the group, its subgroups and their sections go into another notebook or group. */
+export function moveSectionGroup(lib: Library, groupId: Id, to: { notebookId: Id; parentId?: Id }): boolean {
+  const from = lib.notebooks.find((n) => n.groups?.some((g) => g.id === groupId));
+  const target = lib.notebooks.find((n) => n.id === to.notebookId);
+  if (!from || !target) return false;
+  const family = groupFamily(from, groupId);
+  if (to.parentId && family.has(to.parentId)) return false;
+  const group = from.groups!.find((g) => g.id === groupId)!;
+  if (to.parentId) group.parentId = to.parentId;
+  else delete group.parentId;
+  if (from === target) return true;
+  const groups = from.groups!.filter((g) => family.has(g.id));
+  const sections = from.sections.filter((s) => s.groupId && family.has(s.groupId));
+  from.groups = from.groups!.filter((g) => !family.has(g.id));
+  from.sections = from.sections.filter((s) => !sections.includes(s));
+  (target.groups ??= []).push(...groups);
+  target.sections.push(...sections);
+  if (!from.sections.length) from.sections.push(emptySection("New Section", SECTION_COLORS[0]!));
+  return true;
 }
 
 /**
@@ -718,6 +776,16 @@ export function removeInkStrokes(lib: Library, pageId: Id, ids: Id[]): void {
   touch(lib, pageId);
 }
 
+export function moveInkStrokes(lib: Library, pageId: Id, ids: Id[], dx: number, dy: number): void {
+  const hit = findPage(lib, pageId);
+  if (!hit?.page.ink) return;
+  for (const k of hit.page.ink) {
+    if (!ids.includes(k.id)) continue;
+    k.points = k.points.map((v, i) => Math.round((v + (i % 2 ? dy : dx)) * 10) / 10);
+  }
+  touch(lib, pageId);
+}
+
 export function setPaper(lib: Library, pageId: Id, patch: Partial<PaperStyle>): void {
   const hit = findPage(lib, pageId);
   if (!hit) return;
@@ -782,4 +850,62 @@ export function sortTable(lib: Library, pageId: Id, outlineId: Id, tableId: Id, 
   body.sort((a, b) => text(a).localeCompare(text(b), undefined, { numeric: true, sensitivity: "base" }));
   t.rows = [...head, ...body];
   touch(lib, pageId);
+}
+
+// --- custom tags (Customize Tags) ------------------------------------------------------------
+
+/** Add tag definitions that aren't registered yet (by id). */
+export function mergeCustomTags(lib: Library, defs: CustomTagDef[]): void {
+  if (!defs.length) return;
+  const have = new Set((lib.customTags ?? []).map((t) => t.id));
+  const add = defs.filter((d) => !have.has(d.id));
+  if (add.length) lib.customTags = [...(lib.customTags ?? []), ...add];
+}
+
+export function saveCustomTag(lib: Library, def: CustomTagDef): void {
+  const list = (lib.customTags ??= []);
+  const i = list.findIndex((t) => t.id === def.id);
+  if (i >= 0) list[i] = def;
+  else list.push(def);
+}
+
+/** Deleting a tag definition keeps the tags on notes; they show their label. */
+export function deleteCustomTag(lib: Library, id: string): void {
+  lib.customTags = (lib.customTags ?? []).filter((t) => t.id !== id);
+}
+
+// --- paragraph spacing and list formats --------------------------------------------------------
+
+/** Paragraph Spacing Options: before / after / line spacing at least (points; 0 or undefined clears). */
+export function setParagraphSpacing(lib: Library, ref: ListRef, elId: Id, patch: { spaceBefore?: number; spaceAfter?: number; lineSpacing?: number }): void {
+  const el = getList(lib, ref)?.find((e) => e.id === elId);
+  if (el?.kind !== "text") return;
+  for (const k of ["spaceBefore", "spaceAfter", "lineSpacing"] as const) {
+    if (!(k in patch)) continue;
+    const v = patch[k];
+    if (v) el[k] = v;
+    else delete el[k];
+  }
+  touch(lib, ref.pageId);
+}
+
+/** Bullet / numbering library: apply a specific list format (null removes the list). */
+export function setListStyle(lib: Library, ref: ListRef, elId: Id, list: ListStyle | null): void {
+  const el = getList(lib, ref)?.find((e) => e.id === elId);
+  if (!el) return;
+  if (list) el.list = list;
+  else delete el.list;
+  touch(lib, ref.pageId);
+}
+
+/** Restart numbering at `start` from this item, or continue the previous list (start undefined). */
+export function setListStart(lib: Library, ref: ListRef, elId: Id, start: number | undefined): void {
+  const el = getList(lib, ref)?.find((e) => e.id === elId);
+  if (el?.list?.kind !== "numbered") return;
+  if (start) el.list = { ...el.list, start };
+  else {
+    const { start: _s, ...rest } = el.list;
+    el.list = rest;
+  }
+  touch(lib, ref.pageId);
 }

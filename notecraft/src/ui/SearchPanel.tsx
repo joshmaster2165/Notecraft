@@ -1,4 +1,5 @@
-// ⌘E: search every notebook (titles, text, table cells and image OCR text).
+// ⌘E: search this section, this notebook or every notebook (titles, text,
+// table cells and image OCR text).
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Element, Library, Page } from "../model/types.ts";
 import { pageText } from "../model/ops.ts";
@@ -36,12 +37,18 @@ function findElement(page: Page, q: string): { id: string; offset: number } | un
   return undefined;
 }
 
-function search(lib: Library, query: string): Hit[] {
+export type SearchScope = "section" | "notebook" | "all";
+const SCOPES: [SearchScope, string][] = [["section", "This section"], ["notebook", "This notebook"], ["all", "All notebooks"]];
+let lastScope: SearchScope = "all";
+
+function search(lib: Library, query: string, scope: SearchScope, notebookId: string | null, sectionId: string | null): Hit[] {
   const q = query.trim().toLowerCase();
   if (!q) return [];
   const hits: Hit[] = [];
   for (const nb of lib.notebooks) {
+    if (scope !== "all" && nb.id !== notebookId) continue;
     for (const s of nb.sections) {
+      if (scope === "section" && s.id !== sectionId) continue;
       for (const page of s.pages) {
         const text = pageText(page);
         const i = text.toLowerCase().indexOf(q);
@@ -60,12 +67,17 @@ function search(lib: Library, query: string): Hit[] {
 
 export function SearchPanel() {
   const lib = useStore((s) => s.lib);
+  const notebookId = useStore((s) => s.ui.notebookId);
+  const sectionId = useStore((s) => s.ui.sectionId);
+  const [scope, setScopeState] = useState<SearchScope>(lastScope);
+  const setScope = (v: SearchScope) => (setScopeState(v), (lastScope = v), input.current?.focus());
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
   const input = useRef<HTMLInputElement>(null);
-  const hits = useMemo(() => search(lib, query), [lib, query]);
+  const hits = useMemo(() => search(lib, query, scope, notebookId, sectionId), [lib, query, scope, notebookId, sectionId]);
+  const label = scope === "section" ? "Search this section" : scope === "notebook" ? "Search this notebook" : "Search all notebooks";
   useEffect(() => input.current?.focus(), []);
-  useEffect(() => setCursor(0), [query]);
+  useEffect(() => setCursor(0), [query, scope]);
 
   const close = () => store.setUi({ searchOpen: false });
   const open = (h: Hit) => {
@@ -76,14 +88,14 @@ export function SearchPanel() {
 
   return (
     <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && close()}>
-      <div className="search" role="dialog" aria-modal="true" aria-label="Search all notebooks">
+      <div className="search" role="dialog" aria-modal="true" aria-label={label}>
         <label className="search-box">
           <Icon.search />
           <input
             ref={input}
             value={query}
-            placeholder="Search all notebooks"
-            aria-label="Search all notebooks"
+            placeholder={label}
+            aria-label={label}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Escape") close();
@@ -94,9 +106,14 @@ export function SearchPanel() {
           />
           <kbd>esc</kbd>
         </label>
+        <div className="search-scope" role="radiogroup" aria-label="Search in">
+          {SCOPES.map(([v, l]) => (
+            <button key={v} role="radio" aria-checked={scope === v} className={scope === v ? "is-on" : ""} onClick={() => setScope(v)}>{l}</button>
+          ))}
+        </div>
         {query.trim() && (
           <ul className="search-results" role="listbox">
-            {hits.length === 0 && <li className="search-empty">No pages match “{query.trim()}”.</li>}
+            {hits.length === 0 && <li className="search-empty">No pages {scope === "all" ? "" : scope === "section" ? "in this section " : "in this notebook "}match “{query.trim()}”.</li>}
             {hits.map((h, i) => (
               <li key={h.page.id} role="option" aria-selected={i === cursor} className={i === cursor ? "is-cursor" : ""} onMouseEnter={() => setCursor(i)} onClick={() => open(h)}>
                 <div className="hit-title">{h.page.title || "Untitled page"}</div>

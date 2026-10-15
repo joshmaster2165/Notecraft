@@ -61,6 +61,10 @@ export const Icon = {
   copy: (p: P) => <svg {...base(p)}><rect x="7" y="7" width="10" height="10" rx="1.5" /><path d="M13 7V4.5A1.5 1.5 0 0 0 11.5 3h-7A1.5 1.5 0 0 0 3 4.5v7A1.5 1.5 0 0 0 4.5 13H7" /></svg>,
   move: (p: P) => <svg {...base(p)}><path d="M4 10h11M11.5 6.5 15 10l-3.5 3.5" /></svg>,
   restore: (p: P) => <svg {...base(p)}><path d="M4 9a6 6 0 1 1 1.7 4.2" /><path d="M3.5 4.5V9H8" /></svg>,
+  spacing: (p: P) => <svg {...base(p)}><path d="M9 5h8M9 10h8M9 15h8M4.5 4v12M3 5.5 4.5 4 6 5.5M3 14.5 4.5 16 6 14.5" /></svg>,
+  mic: (p: P) => <svg {...base(p)}><rect x="7.5" y="3" width="5" height="9" rx="2.5" /><path d="M5 9.5a5 5 0 0 0 10 0M10 14.5V17" /></svg>,
+  shapes: (p: P) => <svg {...base(p)}><rect x="3" y="10" width="7" height="7" rx="1" /><circle cx="13.5" cy="6.5" r="3.5" /><path d="M11 17l6-6" /></svg>,
+  lasso: (p: P) => <svg {...base(p)}><ellipse cx="10" cy="8" rx="6.5" ry="4.5" strokeDasharray="2.5 2" /><path d="M6 12c-1 2 0 4 2 4" /></svg>,
   check: (p: P) => <svg {...base(p)}><path d="m5 10.5 3 3 7-7" /></svg>,
 };
 

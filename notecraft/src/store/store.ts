@@ -15,17 +15,26 @@ export interface ActiveParagraph {
   elementId: Id;
 }
 
-export type DrawTool = "type" | "pen" | "highlighter" | "eraser";
+export type DrawTool = "type" | "pen" | "highlighter" | "eraser" | "lasso" | "shape";
+export type ShapeKind = "line" | "arrow" | "rect" | "ellipse";
 export interface DrawState {
   tool: DrawTool;
   penColor: string;
   penWidth: number;
   highlighterColor: string;
   highlighterWidth: number;
+  shape: ShapeKind;
 }
 
 export type SidePanel = "versions" | "tags" | null;
-export type Dialog = { kind: "movePage"; pageId: Id } | { kind: "moveSection"; sectionId: Id } | { kind: "templates" } | { kind: "trash" } | { kind: "oneNoteImport" } | null;
+export type Dialog = { kind: "movePage"; pageId: Id } | { kind: "moveSection"; sectionId: Id } | { kind: "moveGroup"; groupId: Id } | { kind: "templates" } | { kind: "trash" } | { kind: "oneNoteImport" } | { kind: "customTags" } | PromptDialog | null;
+export interface PromptDialog {
+  kind: "prompt";
+  title: string;
+  label: string;
+  value: string;
+  resolve: (value: string | null) => void;
+}
 
 export interface UiState {
   notebookId: Id | null;
@@ -47,6 +56,8 @@ export interface UiState {
   preview: { pageId: Id; version: PageVersion } | null;
   zoomAnchor: ZoomAnchor;
   toast: { id: number; text: string } | null;
+  /** Insert › Record Audio: when the current recording started. */
+  recording: number | null;
 }
 
 export interface AppState {
@@ -85,13 +96,14 @@ class Store {
         active: null,
         searchOpen: false,
         sidePanel: null,
-        draw: { tool: "type", penColor: "#1f3a5f", penWidth: 2, highlighterColor: "#ffe14d", highlighterWidth: 14 },
+        draw: { tool: "type", penColor: "#1f3a5f", penWidth: 2, highlighterColor: "#ffe14d", highlighterWidth: 14, shape: "rect" },
         fullPage: false,
         findOpen: false,
         dialog: null,
         preview: null,
         zoomAnchor: "viewportOrigin",
         toast: null,
+        recording: null,
       },
       loaded: false,
       saveState: "saved",

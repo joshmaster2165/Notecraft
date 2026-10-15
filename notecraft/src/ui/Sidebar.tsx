@@ -6,6 +6,7 @@ import { store, useStore } from "../store/store.ts";
 import { deleteSection, exportNotebook, importFiles, newNotebook, newSection, newSectionGroup, selectNotebook, selectSection } from "../store/actions.ts";
 import { Icon, Logo } from "./icons.tsx";
 import { desktop } from "../desktop.ts";
+import { copySectionLink } from "../store/links.ts";
 
 function InlineRename({ value, onDone }: { value: string; onDone: (v: string | null) => void }) {
   const ref = useRef<HTMLInputElement>(null);
@@ -32,6 +33,7 @@ function SectionMenu({ section, onClose, onRename }: { section: Section; onClose
     <div className="menu" role="menu" onMouseLeave={onClose}>
       <button role="menuitem" onClick={() => (onRename(), onClose())}>Rename</button>
       <button role="menuitem" onClick={() => (store.setUi({ dialog: { kind: "moveSection", sectionId: section.id } }), onClose())}>Move to…</button>
+      <button role="menuitem" onClick={() => (void copySectionLink(section.id), onClose())}>Copy link to section</button>
       <div className="menu-swatches" role="group" aria-label="Section color">
         {ops.SECTION_COLORS.map((c) => (
           <button
@@ -150,6 +152,7 @@ function GroupNode(props: TreeProps & { group: SectionGroup }) {
         {menuFor === g.id && (
           <div className="menu" role="menu" onMouseLeave={() => setMenuFor(null)}>
             <button onClick={() => (setRenaming(g.id), setMenuFor(null))}>Rename</button>
+            <button onClick={() => (store.setUi({ dialog: { kind: "moveGroup", groupId: g.id } }), setMenuFor(null))}>Move to…</button>
             <button onClick={() => {
               const s = store.edit((d) => {
                 const sec = ops.createSection(d, notebook.id);

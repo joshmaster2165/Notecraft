@@ -2,16 +2,19 @@
 // editor's selection by preventing focus on mousedown.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Draft } from "immer";
-import type { Element as NoteElement, Library, ParagraphStyle, RuleLines } from "../model/types.ts";
+import type { Element as NoteElement, Library, ListStyle, ParagraphStyle, RuleLines } from "../model/types.ts";
 import { LAYOUT } from "../model/types.ts";
 import * as ops from "../model/ops.ts";
-import { TAGS } from "../model/tags.ts";
+import { TAGS, customTags } from "../model/tags.ts";
 import { MAX_ZOOM, MIN_ZOOM } from "@re/canvas/viewport.ts";
-import { store, useStore, type DrawTool } from "../store/store.ts";
+import { store, useStore, type DrawTool, type ShapeKind } from "../store/store.ts";
 import { currentPage, exportPageMarkdown, insertAttachments, insertImageFiles, printPage } from "../store/actions.ts";
 import { persistSelection } from "../store/persist.ts";
 import { canvasApi, useZoom } from "./canvasApi.ts";
 import { promptLink } from "./editor/Paragraph.tsx";
+import { copyPageLink, copyParagraphLink } from "../store/links.ts";
+import { askText } from "./prompt.ts";
+import { startRecording, stopRecording } from "../store/recorder.ts";
 import { TagIcon } from "./editor/TagIcon.tsx";
 import { FONTS, FONT_COLORS, HIGHLIGHT_COLORS, SIZES, applyStyle, clearStyle, currentFont, exec } from "./format.ts";
 import { Icon } from "./icons.tsx";
@@ -26,7 +29,20 @@ const STYLES: { value: ParagraphStyle; label: string }[] = [
   { value: "h6", label: "Heading 6" },
   { value: "quote", label: "Quote" },
   { value: "code", label: "Code" },
+  { value: "cite", label: "Citation" },
 ];
+
+const BULLET_LIBRARY = ["•", "◦", "▪", "–", "➢", "✓", "★", "◆"];
+const NUMBER_LIBRARY: { label: string; list: ListStyle }[] = [
+  { label: "1.", list: { kind: "numbered", scheme: "decimal", suffix: "." } },
+  { label: "1)", list: { kind: "numbered", scheme: "decimal", suffix: ")" } },
+  { label: "(1)", list: { kind: "numbered", scheme: "decimal", prefix: "(", suffix: ")" } },
+  { label: "a.", list: { kind: "numbered", scheme: "lowerLetter", suffix: "." } },
+  { label: "A.", list: { kind: "numbered", scheme: "upperLetter", suffix: "." } },
+  { label: "i.", list: { kind: "numbered", scheme: "lowerRoman", suffix: "." } },
+  { label: "I.", list: { kind: "numbered", scheme: "upperRoman", suffix: "." } },
+];
+const SPACING_PRESETS = [0, 3, 6, 12, 18, 24];
 
 export const PAGE_COLORS: [string, string | undefined][] = [
   ["None", undefined], ["Blue", "#dbe9f9"], ["Yellow", "#fff6c7"], ["Green", "#e3f4d6"], ["Red", "#fde0dd"], ["Purple", "#ece2f6"],
@@ -174,7 +190,10 @@ export function Toolbar() {
   const sidePanel = useStore((s) => s.ui.sidePanel);
   const draw = useStore((s) => s.ui.draw);
   const fullPage = useStore((s) => s.ui.fullPage);
+  useStore((s) => s.lib.customTags); // re-render the Tags menu when custom tags change
   const page = useStore((s) => (s.ui.pageId ? ops.findPage(s.lib, s.ui.pageId)?.page : undefined));
+  const pageId = page?.id;
+  const recording = useStore((s) => s.ui.recording);
   const el = useActiveElement();
   const formats = useSelectionFormats();
   const zoom = useZoom();
@@ -251,6 +270,8 @@ export function Toolbar() {
           {(close) => (
             <>
               <button onClick={() => (store.setUi({ dialog: { kind: "templates" } }), close())}>Page templates…</button>
+              <button disabled={!pageId} onClick={() => (pageId && void copyPageLink(pageId), close())}>Copy link to page</button>
+              <button disabled={!pageId || el?.kind !== "text"} onClick={() => (pageId && active && void copyParagraphLink(pageId, active.elementId), close())}>Copy link to paragraph</button>
               <button onClick={() => (printPage(), close())}>Print or save as PDF…</button>
               <button onClick={() => (exportPageMarkdown(), close())}>Export page as Markdown</button>
             </>
@@ -300,9 +321,61 @@ export function Toolbar() {
             </div>
             <div className="tb-group">
               <Btn label="Bullets" kbd="⌘." on={el?.list?.kind === "bullet"} disabled={!active} onClick={() => editActive((d) => ops.toggleList(d, active!.ref, [active!.elementId], "bullet"))}><Icon.bullets /></Btn>
+              <Menu label="Bullet library" button={<Icon.chevron width={12} height={12} />}>
+                {(close) => (
+                  <div className="lib-grid">
+                    {BULLET_LIBRARY.map((g) => (
+                      <button key={g} className="lib-cell" disabled={!active} onClick={() => (editActive((d) => ops.setListStyle(d, active!.ref, active!.elementId, { kind: "bullet", glyph: g })), close())}>{g}</button>
+                    ))}
+                  </div>
+                )}
+              </Menu>
               <Btn label="Numbering" kbd="⌘/" on={el?.list?.kind === "numbered"} disabled={!active} onClick={() => editActive((d) => ops.toggleList(d, active!.ref, [active!.elementId], "numbered"))}><Icon.numbers /></Btn>
+              <Menu label="Numbering library" button={<Icon.chevron width={12} height={12} />}>
+                {(close) => (
+                  <>
+                    <div className="lib-grid">
+                      {NUMBER_LIBRARY.map((n) => (
+                        <button key={n.label} className="lib-cell" disabled={!active} onClick={() => (editActive((d) => ops.setListStyle(d, active!.ref, active!.elementId, n.list)), close())}>{n.label}</button>
+                      ))}
+                    </div>
+                    <hr />
+                    <button disabled={el?.list?.kind !== "numbered"} onClick={() => (editActive((d) => ops.setListStart(d, active!.ref, active!.elementId, 1)), close())}>Restart numbering at 1</button>
+                    <button disabled={el?.list?.kind !== "numbered"} onClick={async () => {
+                      const target = active!;
+                      close();
+                      const v = Number(await askText("Set numbering value", "Start numbering at", String(el?.list?.kind === "numbered" ? el.list.start ?? 1 : 1)));
+                      if (v > 0) store.edit((d) => ops.setListStart(d, target.ref, target.elementId, Math.floor(v)));
+                    }}>Set numbering value…</button>
+                    <button disabled={el?.list?.kind !== "numbered" || !el.list.start} onClick={() => (editActive((d) => ops.setListStart(d, active!.ref, active!.elementId, undefined)), close())}>Continue numbering</button>
+                  </>
+                )}
+              </Menu>
               <Btn label="Outdent" kbd="⇧Tab" disabled={!active} onClick={() => editActive((d) => ops.outdent(d, active!.ref, active!.elementId))}><Icon.outdent /></Btn>
               <Btn label="Indent" kbd="Tab" disabled={!active} onClick={() => editActive((d) => ops.indent(d, active!.ref, active!.elementId))}><Icon.indent /></Btn>
+              <Menu label="Paragraph spacing" button={<Icon.spacing />}>
+                {(close) => {
+                  const t = el?.kind === "text" ? el : undefined;
+                  const row = (label: string, key: "spaceBefore" | "spaceAfter" | "lineSpacing", values: number[]) => (
+                    <div className="spacing-row">
+                      <span>{label}</span>
+                      {values.map((v) => (
+                        <button key={v} className={`lib-cell${(t?.[key] ?? 0) === v ? " is-on" : ""}`} disabled={!t}
+                          onClick={() => editActive((d) => ops.setParagraphSpacing(d, active!.ref, active!.elementId, { [key]: v }))}>{v === 0 ? "—" : v}</button>
+                      ))}
+                    </div>
+                  );
+                  return (
+                    <div className="spacing-menu">
+                      <div className="menu-note">Paragraph spacing (points)</div>
+                      {row("Before", "spaceBefore", SPACING_PRESETS)}
+                      {row("After", "spaceAfter", SPACING_PRESETS)}
+                      {row("Line at least", "lineSpacing", [0, 14, 18, 22, 28, 36])}
+                      <button onClick={close}>Done</button>
+                    </div>
+                  );
+                }}
+              </Menu>
               <Menu label="Alignment" button={align === "center" ? <Icon.alignCenter /> : align === "right" ? <Icon.alignRight /> : <Icon.alignLeft />}>
                 {(close) => (["left", "center", "right"] as const).map((a) => (
                   <button key={a} role="menuitemradio" aria-checked={align === a} disabled={el?.kind !== "text"}
@@ -324,7 +397,15 @@ export function Toolbar() {
                         {t.shortcut && <kbd>⌘{t.shortcut}</kbd>}
                       </button>
                     ))}
+                    {customTags().length > 0 && <hr />}
+                    {customTags().map((t) => (
+                      <button key={t.id} role="menuitemcheckbox" aria-checked={hasTag(t.id)} disabled={!active}
+                        onClick={() => (editActive((d) => ops.toggleTag(d, active!.ref, active!.elementId, t.id)), close())}>
+                        <TagIcon def={t} /> <span>{t.label}</span>
+                      </button>
+                    ))}
                     <hr />
+                    <button onClick={() => (store.setUi({ dialog: { kind: "customTags" } }), close())}>Customize tags…</button>
                     <button disabled={!el?.tags?.length} onClick={() => (editActive((d) => ops.clearTags(d, active!.ref, active!.elementId)), close())}>
                       Remove tags <kbd>⌘0</kbd>
                     </button>
@@ -345,7 +426,14 @@ export function Toolbar() {
               </Menu>
               <Btn label="Picture" wide onClick={() => imageInput.current?.click()}><span className="tb-labeled"><Icon.image /> Picture</span></Btn>
               <Btn label="File attachment" wide onClick={() => fileInput.current?.click()}><span className="tb-labeled"><Icon.file /> File</span></Btn>
-              <Btn label="Link" kbd="⌘K" wide disabled={el?.kind !== "text"} onClick={promptLink}><span className="tb-labeled"><Icon.link /> Link</span></Btn>
+              <Btn label="Link" kbd="⌘K" wide disabled={el?.kind !== "text"} onClick={() => void promptLink()}><span className="tb-labeled"><Icon.link /> Link</span></Btn>
+            </div>
+            <div className="tb-group">
+              {recording ? (
+                <Btn label="Stop recording" wide on onClick={stopRecording}><span className="tb-labeled"><i className="rec-dot" /> Stop <RecordingClock since={recording} /></span></Btn>
+              ) : (
+                <Btn label="Record audio" wide disabled={!page} onClick={() => { const t = filesTarget(); if (t) void startRecording(t); }}><span className="tb-labeled"><Icon.mic /> Record audio</span></Btn>
+              )}
             </div>
             <div className="tb-group">
               <Btn label="Insert date" kbd="⌥⇧D" wide onClick={() => insertText(dateStr())}><span className="tb-labeled">Date</span></Btn>
@@ -365,6 +453,14 @@ export function Toolbar() {
               <Btn label="Pen" on={draw.tool === "pen"} onClick={() => pickTool("pen")}><Icon.pen /></Btn>
               <Btn label="Highlighter" on={draw.tool === "highlighter"} onClick={() => pickTool("highlighter")}><Icon.highlight /></Btn>
               <Btn label="Eraser" on={draw.tool === "eraser"} onClick={() => pickTool("eraser")}><Icon.eraser /></Btn>
+              <Btn label="Lasso select" on={draw.tool === "lasso"} onClick={() => pickTool("lasso")}><Icon.lasso /></Btn>
+              <Menu label="Shapes" button={<span className={`tb-labeled${draw.tool === "shape" ? " is-on" : ""}`}><Icon.shapes /></span>}>
+                {(close) => SHAPES.map(([v, name, glyph]) => (
+                  <button key={v} role="menuitemradio" aria-checked={draw.tool === "shape" && draw.shape === v} onClick={() => (setDraw({ tool: "shape", shape: v }), close())}>
+                    <span className="shape-glyph">{glyph}</span> {name}
+                  </button>
+                ))}
+              </Menu>
             </div>
             <div className="tb-group">
               {(draw.tool === "highlighter" ? HIGHLIGHTER_COLORS : PEN_COLORS).map((c) => {
@@ -372,7 +468,7 @@ export function Toolbar() {
                 return (
                   <button key={c} className={`pen-swatch${on ? " is-on" : ""}`} style={{ background: c }} aria-label={`Ink color ${c}`} aria-pressed={on}
                     onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => setDraw(draw.tool === "highlighter" ? { highlighterColor: c } : { penColor: c, tool: "pen" })} />
+                    onClick={() => setDraw(draw.tool === "highlighter" ? { highlighterColor: c } : { penColor: c, tool: draw.tool === "shape" ? "shape" : "pen" })} />
                 );
               })}
             </div>
@@ -386,7 +482,7 @@ export function Toolbar() {
                 );
               })}
             </div>
-            <div className="tb-group tb-hint">{draw.tool === "type" ? "Pick a pen to draw on the page." : draw.tool === "eraser" ? "Drag across strokes to erase them." : "Draw anywhere on the page. Two-finger scroll still pans."}</div>
+            <div className="tb-group tb-hint">{DRAW_HINTS[draw.tool]}</div>
           </>
         )}
 
@@ -484,4 +580,25 @@ function TableMenu() {
       </Menu>
     </div>
   );
+}
+
+const SHAPES: [ShapeKind, string, string][] = [["line", "Line", "╱"], ["arrow", "Arrow", "↗"], ["rect", "Rectangle", "▭"], ["ellipse", "Ellipse", "◯"]];
+
+const DRAW_HINTS: Record<DrawTool, string> = {
+  type: "Pick a pen to draw on the page.",
+  pen: "Draw anywhere on the page. Two-finger scroll still pans.",
+  highlighter: "Draw anywhere on the page. Two-finger scroll still pans.",
+  eraser: "Drag across strokes to erase them.",
+  lasso: "Draw a loop around ink to select it, then drag to move or press Delete.",
+  shape: "Drag on the page to draw the shape. Pen color and thickness apply.",
+};
+
+function RecordingClock({ since }: { since: number }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(t);
+  }, []);
+  const secs = Math.max(0, Math.floor((now - since) / 1000));
+  return <span className="rec-clock">{Math.floor(secs / 60)}:{String(secs % 60).padStart(2, "0")}</span>;
 }

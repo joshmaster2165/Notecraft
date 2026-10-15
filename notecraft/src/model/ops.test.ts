@@ -82,3 +82,50 @@ test("Pages nest at most one level below their predecessor", () => {
   });
   assert.equal(ops.findPage(s, second)!.page.level, 2);
 });
+
+test("Move Section Group carries its subgroups and sections to another notebook", () => {
+  const lib = produce({ version: 1, notebooks: [] } as Library, (d) => {
+    const a = ops.createNotebook(d, "A");
+    ops.createNotebook(d, "B");
+    const g = ops.createSectionGroup(d, a.id, "G");
+    const sub = ops.createSectionGroup(d, a.id, "Sub", g.id);
+    const s1 = ops.createSection(d, a.id, "In G");
+    s1.groupId = g.id;
+    const s2 = ops.createSection(d, a.id, "In Sub");
+    s2.groupId = sub.id;
+  });
+  const [a, b] = lib.notebooks as [Library["notebooks"][0], Library["notebooks"][0]];
+  const g = a.groups!.find((x) => x.name === "G")!;
+  // A group can't move inside itself.
+  assert.equal(produce(lib, (d) => void ops.moveSectionGroup(d, g.id, { notebookId: a.id, parentId: a.groups!.find((x) => x.name === "Sub")!.id })).notebooks[0]!.groups!.find((x) => x.id === g.id)!.parentId, undefined);
+  const next = produce(lib, (d) => void ops.moveSectionGroup(d, g.id, { notebookId: b.id }));
+  const [na, nb] = next.notebooks as [Library["notebooks"][0], Library["notebooks"][0]];
+  assert.deepEqual(nb.groups!.map((x) => x.name), ["G", "Sub"]);
+  assert.deepEqual(nb.sections.map((s) => s.name).filter((n) => n.startsWith("In")), ["In G", "In Sub"]);
+  assert.equal(na.groups!.length, 0);
+  assert.ok(na.sections.every((s) => !s.name.startsWith("In")));
+});
+
+test("findElement reaches paragraphs inside table cells", () => {
+  const { lib, ref } = fixture();
+  const cellPara = ops.paragraph([{ text: "in cell" }]);
+  const next = produce(lib, (d) => {
+    const o = ops.findOutline(d, ref.pageId, ref.outlineId)!;
+    o.elements.push({ id: "t1", kind: "table", depth: 0, rows: [{ id: "r1", cells: [{ id: "c1", elements: [cellPara] }] }], columns: [100] } as never);
+  });
+  const page = ops.findPage(next, ref.pageId)!.page;
+  assert.equal(ops.findElement(page, cellPara.id)?.id, cellPara.id);
+  assert.equal(ops.findElement(page, "nope"), undefined);
+});
+
+test("moveInkStrokes shifts only the selected strokes", () => {
+  const { lib, ref } = fixture();
+  const next = produce(lib, (d) => {
+    ops.addInkStroke(d, ref.pageId, { id: "k1", tool: "pen", color: "#000", width: 2, points: [0, 0, 10, 10] });
+    ops.addInkStroke(d, ref.pageId, { id: "k2", tool: "pen", color: "#000", width: 2, points: [5, 5] });
+    ops.moveInkStrokes(d, ref.pageId, ["k1"], 3, -2);
+  });
+  const ink = ops.findPage(next, ref.pageId)!.page.ink!;
+  assert.deepEqual(ink[0]!.points, [3, -2, 13, 8]);
+  assert.deepEqual(ink[1]!.points, [5, 5]);
+});

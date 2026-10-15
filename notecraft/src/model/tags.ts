@@ -1,7 +1,7 @@
 // OneNote's default tag catalog, in its menu order. Labels come from the tag
 // names in OneNote for Mac's en.lproj strings; ⌘1–⌘9 match OneNote's Ctrl+1–9
 // and ⌘0 removes all tags. Checkable tags behave like To Do (ActionItemStatus).
-import type { NoteTag } from "./types.ts";
+import type { CustomTagDef, NoteTag } from "./types.ts";
 
 export type TagShape =
   | "checkbox" | "star" | "question" | "highlight" | "person" | "house" | "phone" | "globe" | "bulb" | "key"
@@ -57,24 +57,62 @@ export const TAGS: TagDef[] = [
 const BY_ID = new Map(TAGS.map((t) => [t.id, t]));
 const BY_LABEL = new Map(TAGS.map((t) => [t.label.toLowerCase(), t]));
 
+// Custom tags live in the library; the store keeps this registry in sync.
+let custom = new Map<string, TagDef>();
+
+export function customTagId(label: string): string {
+  return `custom:${label.trim().toLowerCase()}`;
+}
+
+function fromCustom(c: CustomTagDef): TagDef {
+  return { id: c.id, label: c.label, shape: c.shape, color: c.color, ...(c.check ? { check: true } : {}), ...(c.highlight ? { highlight: c.highlight } : {}), ...(c.shape === "letter" || (c.shape === "checkbox" && !c.check) ? { badge: c.label.slice(0, 1).toUpperCase() } : {}) };
+}
+
+export function setCustomTags(defs: CustomTagDef[] | undefined): void {
+  custom = new Map((defs ?? []).map((d) => [d.id, fromCustom(d)]));
+}
+
+export function customTags(): TagDef[] {
+  return [...custom.values()];
+}
+
 export function tagDefById(id: string): TagDef | undefined {
-  return BY_ID.get(id);
+  return BY_ID.get(id) ?? custom.get(id);
 }
 
 export function tagDef(tag: NoteTag): TagDef {
-  return BY_ID.get(tag.kind) ?? { id: "custom", label: tag.label ?? "Tag", shape: "letter", color: "#6b6f80", badge: (tag.label ?? "•").slice(0, 1).toUpperCase() };
+  return tagDefById(tag.kind) ?? { id: tag.kind, label: tag.label ?? "Tag", shape: "letter", color: "#6b6f80", badge: (tag.label ?? "•").slice(0, 1).toUpperCase() };
 }
 
 export function tagLabel(tag: NoteTag): string {
-  return BY_ID.get(tag.kind)?.label ?? tag.label ?? "Tag";
+  return tagDefById(tag.kind)?.label ?? tag.label ?? "Tag";
 }
 
-/** Map an imported OneNote tag label (NoteTagLabel) onto the catalog. */
+/**
+ * Map an imported OneNote tag (NoteTagLabel, ActionItemType, colors) onto the
+ * catalog, or onto a custom tag definition the caller should register. A tag
+ * whose definition has an ActionItemType is a to-do style, checkable tag.
+ */
+export function tagFromOneNote(t: { label?: string; completed?: boolean; actionItemType?: number; highlightColor?: string; textColor?: string }): { tag: NoteTag; def?: CustomTagDef } {
+  const key = (t.label ?? "").toLowerCase();
+  const known = BY_LABEL.get(key) ?? (key.startsWith("discuss with") ? BY_ID.get(key.includes("manager") ? "manager" : "discussA") : undefined);
+  if (known) return { tag: { kind: known.id, ...(known.check ? { done: !!t.completed } : {}) } };
+  const label = t.label?.trim() || "Tag";
+  const check = t.actionItemType !== undefined;
+  const def: CustomTagDef = {
+    id: customTagId(label),
+    label,
+    shape: check ? "checkbox" : t.highlightColor ? "highlight" : "letter",
+    color: t.textColor ?? "#5b6b8c",
+    ...(check ? { check: true } : {}),
+    ...(!check && t.highlightColor ? { highlight: t.highlightColor } : {}),
+  };
+  return { tag: { kind: def.id, label, ...(check ? { done: !!t.completed } : {}) }, def };
+}
+
+/** Back-compat helper for callers that only have a label. */
 export function tagFromLabel(label: string | undefined, done?: boolean): NoteTag {
-  const key = (label ?? "").toLowerCase().replace(/<[^>]*>/g, (m) => m.toLowerCase());
-  const def = BY_LABEL.get(key) ?? (key.startsWith("discuss with") ? BY_ID.get(key.includes("manager") ? "manager" : "discussA") : undefined);
-  if (def) return { kind: def.id, ...(def.check ? { done: !!done } : {}) };
-  return { kind: "custom", ...(label ? { label } : {}), ...(done !== undefined ? { done } : {}) };
+  return tagFromOneNote({ label, completed: done, ...(done !== undefined ? { actionItemType: 0 } : {}) }).tag;
 }
 
 export function tagByShortcut(digit: number): TagDef | undefined {

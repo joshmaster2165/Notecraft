@@ -42,7 +42,7 @@
   "build": {
     "appId": "app.notecraft.desktop",
     "productName": "Notecraft",
-    "copyright": "Copyright \u00a9 2026 joshmaster2165",
+    "copyright": "Copyright © 2026 joshmaster2165",
     "directories": {
       "output": "release",
       "buildResources": "build"
@@ -75,7 +75,10 @@
       ],
       "identity": "-",
       "hardenedRuntime": false,
-      "darkModeSupport": true
+      "darkModeSupport": true,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Notecraft records audio notes into your pages when you choose Insert › Record audio."
+      }
     },
     "dmg": {
       "title": "Notecraft ${version}"

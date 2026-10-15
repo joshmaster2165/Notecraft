@@ -12,21 +12,23 @@ import type {
   Page as OnePage,
   TextRun,
 } from "@re/parser/src/notebook.ts";
-import type { Element, FloatingImage, ListStyle, NoteTag, NumberScheme, Outline, Page, PageLevel, PageVersion, ParagraphStyle, Run, Section } from "./types.ts";
+import type { CustomTagDef, Element, FloatingImage, ListStyle, NoteTag, NumberScheme, Outline, Page, PageLevel, PageVersion, ParagraphStyle, Run, Section } from "./types.ts";
 import { LAYOUT } from "./types.ts";
 import { newId, nowIso } from "../lib/id.ts";
 import { normalizeRuns } from "../lib/richtext.ts";
 import { paragraph, SECTION_COLORS } from "./ops.ts";
-import { tagFromLabel } from "./tags.ts";
+import { tagFromOneNote } from "./tags.ts";
 
 export interface ImportResult {
   section: Section;
   stats: { pages: number; outlines: number; paragraphs: number; tables: number; images: number; imagesWithoutData: number; warnings: number };
   /** OneNote's page history (VersionHistoryContent → VersionProxy), mapped onto the imported pages. */
   versions: Omit<PageVersion, "id">[];
+  /** Custom tags (not in the default catalog) used by the imported notes. */
+  customTags: CustomTagDef[];
 }
 
-const PARAGRAPH_STYLES = new Set(["p", "h1", "h2", "h3", "h4", "h5", "h6", "quote", "code"]);
+const PARAGRAPH_STYLES = new Set(["p", "h1", "h2", "h3", "h4", "h5", "h6", "quote", "code", "cite"]);
 
 function toBase64(bytes: Uint8Array): string {
   let s = "";
@@ -82,8 +84,18 @@ export function importNotebookJson(json: NotebookJson, fileName: string, assets:
     return { kind: "numbered", scheme, suffix: l.suffix ?? "", ...(l.prefix ? { prefix: l.prefix } : {}), ...(l.restart ? { start: l.restart } : {}) };
   };
 
-  // NoteTagStates → catalog tags, matched by NoteTagLabel.
-  const tagsOf = (tags: OneNoteTag[] | undefined): NoteTag[] | undefined => (tags?.length ? tags.map((t) => tagFromLabel(t.label, t.completed)) : undefined);
+  // NoteTagStates → catalog tags (matched by NoteTagLabel) or custom tag definitions.
+  const customTags = new Map<string, CustomTagDef>();
+  const tagsOf = (tags: OneNoteTag[] | undefined): NoteTag[] | undefined => {
+    if (!tags?.length) return undefined;
+    const out: NoteTag[] = [];
+    for (const t of tags) {
+      const { tag, def } = tagFromOneNote(t);
+      if (def) customTags.set(def.id, def);
+      if (!out.some((x) => x.kind === tag.kind)) out.push(tag);
+    }
+    return out;
+  };
 
   const imageOf = (b: ImageBlock) => {
     stats.images++;
@@ -117,8 +129,14 @@ export function importNotebookJson(json: NotebookJson, fileName: string, assets:
           stats.paragraphs++;
           const styleId = c.paragraph.styleId?.toLowerCase();
           const style = (styleId && PARAGRAPH_STYLES.has(styleId) ? styleId : "p") as ParagraphStyle;
-          const align = c.paragraph.alignment && c.paragraph.alignment !== "left" ? { align: c.paragraph.alignment } : {};
-          out.push(paragraph(normalizeRuns(c.runs.map(runOf)), { ...common(), style, ...align }));
+          const pp = c.paragraph;
+          const extra = {
+            ...(pp.alignment && pp.alignment !== "left" ? { align: pp.alignment } : {}),
+            ...(pp.spaceBefore ? { spaceBefore: pp.spaceBefore } : {}),
+            ...(pp.spaceAfter ? { spaceAfter: pp.spaceAfter } : {}),
+            ...(pp.lineSpacing ? { lineSpacing: pp.lineSpacing } : {}),
+          };
+          out.push(paragraph(normalizeRuns(c.runs.map(runOf)), { ...common(), style, ...extra }));
         } else if (c.type === "table") {
           stats.tables++;
           out.push({
@@ -213,7 +231,7 @@ export function importNotebookJson(json: NotebookJson, fileName: string, assets:
   Object.assign(stats, counted);
 
   if (!section.pages.length) section.pages.push({ ...pageOf({ id: "", title: "", size: {}, titleBlocks: [], blocks: [] }) });
-  return { section, stats, versions };
+  return { section, stats, versions, customTags: [...customTags.values()] };
 }
 
 function hash(s: string): number {

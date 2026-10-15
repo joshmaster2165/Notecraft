@@ -152,6 +152,10 @@ const NUMBER_SCHEMES = ["decimal", "upperRoman", "lowerRoman", "upperLetter", "l
 export interface NoteTag {
   label?: string;
   shape?: number;
+  /** ActionItemType from the tag definition; present on to-do style (checkable) tags. */
+  actionItemType?: number;
+  highlightColor?: string;
+  textColor?: string;
   completed?: boolean;
   createdAt?: string;
   completedAt?: string;
@@ -623,12 +627,16 @@ export class NotebookConverter {
     };
     const listDecl = p.oids(Prop.ListNodes!).map((o) => this.resolve(ctx, o)).find(Boolean);
     if (listDecl) el.list = this.convertList(listDecl);
+    // NoteTagStates can sit on the outline element or (in OneNote for Mac's
+    // files, always) on its RichTextOENode content.
     const tags = this.convertNoteTags(ctx, p);
-    if (tags.length) el.tags = tags;
     for (const o of p.oids(Prop.ContentChildNodes!)) {
+      const d = this.resolve(ctx, o);
+      if (d?.jcid.raw === Jcid.RichTextOENode) tags.push(...this.convertNoteTags(ctx, this.props(d)));
       const c = this.convertContent(ctx, o);
       if (c) el.content.push(c);
     }
+    if (tags.length) el.tags = tags;
     return compact(el);
   }
 
@@ -676,6 +684,9 @@ export class NotebookConverter {
       return compact({
         label: def.str(Prop.NoteTagLabel!),
         shape: def.u32(Prop.NoteTagShape!),
+        actionItemType: def.u32(Prop.ActionItemType!),
+        highlightColor: colorRef(def.u32(Prop.NoteTagHighlightColor!)),
+        textColor: colorRef(def.u32(Prop.NoteTagTextColor!)),
         completed: status === undefined ? undefined : (status & 0x1) === 1,
         createdAt: time32(tp.u32(Prop.NoteTagCreated!)),
         completedAt: time32(tp.u32(Prop.NoteTagCompleted!)),

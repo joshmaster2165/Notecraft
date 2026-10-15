@@ -3,42 +3,75 @@
 import type { Draft } from "immer";
 import type { Id, Library, Run } from "../model/types.ts";
 import * as ops from "../model/ops.ts";
-import { normalizeRuns } from "../lib/richtext.ts";
+import { normalizeRuns, runsText } from "../lib/richtext.ts";
 import { store } from "./store.ts";
 
 export const PAGE_LINK_PREFIX = "notecraft:page/";
-export const pageHref = (id: Id) => PAGE_LINK_PREFIX + id;
+export const SECTION_LINK_PREFIX = "notecraft:section/";
+/** A page, or one paragraph on it ("Copy Link to Paragraph"). */
+export const pageHref = (id: Id, elementId?: Id) => PAGE_LINK_PREFIX + id + (elementId ? `#${elementId}` : "");
+export const sectionHref = (id: Id) => SECTION_LINK_PREFIX + id;
+
+type Target = { kind: "page"; id: Id; elementId?: Id } | { kind: "section"; id: Id };
+
+function parseHref(href: string): Target | null {
+  if (href.startsWith(PAGE_LINK_PREFIX)) {
+    const [id, elementId] = href.slice(PAGE_LINK_PREFIX.length).split("#");
+    return id ? { kind: "page", id, ...(elementId ? { elementId } : {}) } : null;
+  }
+  if (href.startsWith(SECTION_LINK_PREFIX)) return { kind: "section", id: href.slice(SECTION_LINK_PREFIX.length) };
+  return null;
+}
 
 export function pageIdFromHref(href: string): Id | null {
-  return href.startsWith(PAGE_LINK_PREFIX) ? href.slice(PAGE_LINK_PREFIX.length) : null;
+  const t = parseHref(href);
+  return t?.kind === "page" ? t.id : null;
 }
 
-/** Click on a link: pages open in Notecraft, everything else in the browser. */
+/** Click on a link: pages, paragraphs and sections open in Notecraft, everything else in the browser. */
 export function followLink(href: string): void {
-  const pageId = pageIdFromHref(href);
-  if (pageId) {
-    if (ops.findPage(store.getState().lib, pageId)) {
-      // Imported lazily to avoid a cycle with actions.ts.
-      void import("./actions.ts").then((a) => a.selectPage(pageId));
-    } else store.toast("That page no longer exists. It may be in Deleted Notes.");
+  const t = parseHref(href);
+  if (!t) {
+    if (/^(https?:|mailto:)/i.test(href)) window.open(href, "_blank", "noopener,noreferrer");
     return;
   }
-  if (/^(https?:|mailto:)/i.test(href)) window.open(href, "_blank", "noopener,noreferrer");
+  const lib = store.getState().lib;
+  // Imported lazily to avoid a cycle with actions.ts.
+  if (t.kind === "section") {
+    if (ops.findSection(lib, t.id)) void import("./actions.ts").then((a) => a.selectSection(t.id));
+    else store.toast("That section no longer exists. It may be in Deleted Notes.");
+    return;
+  }
+  if (!ops.findPage(lib, t.id)) return void store.toast("That page no longer exists. It may be in Deleted Notes.");
+  void import("./actions.ts").then((a) => {
+    a.selectPage(t.id);
+    if (t.elementId) setTimeout(() => store.focus(t.elementId!, 0), 60);
+  });
 }
 
-/** Pasting a copied page link inserts the page's title as a link. */
-export function pageLinkHtml(text: string): string | null {
-  const id = pageIdFromHref(text);
-  const page = id ? ops.findPage(store.getState().lib, id)?.page : undefined;
+const escape = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;");
+
+function linkTitle(t: Target): string | null {
+  const lib = store.getState().lib;
+  if (t.kind === "section") return ops.findSection(lib, t.id)?.section.name ?? null;
+  const page = ops.findPage(lib, t.id)?.page;
   if (!page) return null;
-  const title = (page.title || "Untitled page").replace(/&/g, "&amp;").replace(/</g, "&lt;");
-  return `<a href="${pageHref(page.id)}">${title}</a>`;
+  if (t.elementId) {
+    const el = ops.findElement(page, t.elementId);
+    const text = el?.kind === "text" ? runsText(el.runs).trim() : "";
+    if (text) return text.length > 80 ? text.slice(0, 79) + "…" : text;
+  }
+  return page.title || "Untitled page";
 }
 
-export async function copyPageLink(pageId: Id): Promise<void> {
-  const page = ops.findPage(store.getState().lib, pageId)?.page;
-  if (!page) return;
-  const href = pageHref(pageId);
+/** Pasting a copied page, paragraph or section link inserts its title as a link. */
+export function pageLinkHtml(text: string): string | null {
+  const t = parseHref(text);
+  const title = t && linkTitle(t);
+  return title ? `<a href="${escape(text)}">${escape(title)}</a>` : null;
+}
+
+async function copyLink(href: string, what: string): Promise<void> {
   try {
     if ("ClipboardItem" in window) {
       await navigator.clipboard.write([
@@ -48,10 +81,24 @@ export async function copyPageLink(pageId: Id): Promise<void> {
         }),
       ]);
     } else await navigator.clipboard.writeText(href);
-    store.toast(`Copied a link to “${page.title || "Untitled page"}”. Paste it into any page.`);
+    store.toast(`Copied a link to ${what}. Paste it into any page.`);
   } catch {
     store.toast("Couldn't copy to the clipboard.");
   }
+}
+
+export async function copyPageLink(pageId: Id): Promise<void> {
+  const page = ops.findPage(store.getState().lib, pageId)?.page;
+  if (page) await copyLink(pageHref(pageId), `“${page.title || "Untitled page"}”`);
+}
+
+export async function copySectionLink(sectionId: Id): Promise<void> {
+  const section = ops.findSection(store.getState().lib, sectionId)?.section;
+  if (section) await copyLink(sectionHref(sectionId), `the section “${section.name}”`);
+}
+
+export async function copyParagraphLink(pageId: Id, elementId: Id): Promise<void> {
+  if (ops.findPage(store.getState().lib, pageId)) await copyLink(pageHref(pageId, elementId), "this paragraph");
 }
 
 /**
