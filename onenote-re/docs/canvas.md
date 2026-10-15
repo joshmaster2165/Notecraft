@@ -4,7 +4,8 @@
 The canvas code is Objective-C, so Ghidra recovered real method names. The
 `objc_msgSend` stubs were resolved to their selectors from the
 `__objc_stubs` → `__objc_selrefs` → `__objc_methname` chain. Evidence IDs
-refer to [`evidence/rea-onenote-16.114-arm64.json`](evidence/rea-onenote-16.114-arm64.json).
+refer to the REA evidence bundle `evidence/rea-onenote-16.114-arm64.json`, which
+stays on the analysis machine (it holds decompiler output) and isn't published.
 
 This is static analysis only: no OneNote process was run or traced. AppKit's
 own behaviour (scroll momentum, rubber-banding) lives in the OS, not in

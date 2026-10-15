@@ -5,9 +5,11 @@ arm64 slice of `Contents/MacOS/Microsoft OneNote`
 (sha256 `f30d5efa105cf235475ea7c3467c8e043da062a397d80a9fe5a521ede262c514`).
 The revision-store code is statically linked into the main executable; no
 framework carries it. The binary is stripped, so function names below are Ghidra
-`FUN_` addresses, located through format constants. All of the Evidence lives in
-[`evidence/rea-onenote-16.114-arm64.json`](evidence/rea-onenote-16.114-arm64.json) (98 records)
-and, for the cache store in §11, [`evidence/rea-onenote-16.114-arm64-cache.json`](evidence/rea-onenote-16.114-arm64-cache.json) (91 records).
+`FUN_` addresses, located through format constants. Evidence IDs refer to two
+REA evidence bundles, `evidence/rea-onenote-16.114-arm64.json` (98 records) and,
+for the cache store in §11, `evidence/rea-onenote-16.114-arm64-cache.json`
+(91 records). They hold decompiler output of Microsoft's binary, so they stay on
+the analysis machine and aren't published here.
 
 **Validation corpus:** the 14 `.one` section backups that OneNote writes to
 `~/Library/Containers/com.microsoft.onenote.mac/Data/Library/Application Support/Microsoft User Data/OneNote/15.0/Backup/`
@@ -280,7 +282,12 @@ Details worth knowing **[files]**:
     (0x1DFB, a Windows DPAPI blob) and `OriginalPageNumber` (0x1DF9). Only
     `UnverifiedHash` (0x1DFC) is used (§11.5). Names come from §11.6; the values
     are not interpreted.
-- **No note tags in the samples,** so that code path follows [MS-ONE] only.
+- **Note tags sit on the text node in Mac files.** [MS-ONE] puts
+  `NoteTagStates` (0x40003489) on the `OutlineElementNode`; the Mac backups put
+  it on the paragraph's `RichTextOENode` (0x6000E) instead **[files]**. The
+  parser reads both. Each state points at a `NoteTagSharedDefinitionContainer`
+  (0x120043) with the label, shape and colors; a present `ActionItemType`
+  makes the tag checkable, and bit 0 of `ActionItemStatus` means done.
 
 ---
 

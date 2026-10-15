@@ -1,0 +1,35 @@
+# Typecheck and test the parser and the app on every push and pull request.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            onenote-re/package-lock.json
+            notecraft/package-lock.json
+      - name: onenote-re
+        working-directory: onenote-re
+        run: |
+          npm ci
+          npm run typecheck
+          npm test
+      - name: notecraft
+        working-directory: notecraft
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+        run: |
+          npm ci
+          npx tsc -p tsconfig.json --noEmit
+          npm test
+          npm run build

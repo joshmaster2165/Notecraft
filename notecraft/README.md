@@ -24,7 +24,8 @@ In the desktop app, **File › Import from OneNote on This Computer** finds the
 notebooks OneNote keeps on your machine and imports each one, with its page
 history and any pictures in OneNote's cache. macOS asks once whether
 Notecraft may read another app's data.
-It reuses that workspace's code directly:
+
+Notecraft reuses the research workspace's code directly:
 
 - **`@re/parser`** is the reverse-engineered `.one` revision-store parser. It
   runs in the browser to import sections; nothing is uploaded.
@@ -55,8 +56,8 @@ copies an existing Onecraft library into its own storage, and it still imports
 ## Features, and where each comes from
 
 The references point into [`file-format.md`](../onenote-re/docs/file-format.md) (FF) and
-[`canvas.md`](../onenote-re/docs/canvas.md) (CV). Evidence IDs are in
-`../onenote-re/docs/evidence/`.
+[`canvas.md`](../onenote-re/docs/canvas.md) (CV). The evidence behind each
+Evidence ID stays on the analysis machine and isn't part of the repository.
 
 | Notecraft feature | OneNote structure or behaviour it follows | Reference |
 |---|---|---|
@@ -64,14 +65,15 @@ The references point into [`file-format.md`](../onenote-re/docs/file-format.md) 
 | Subpages (levels 1–3; drag to reorder, → / ← to nest) | `PageMetaData.PageLevel 0x14001DFF`; page order is the `ChildGraphSpaceElementNodes` order | FF §8 |
 | Title with date and time under it | `TitleNode 0x6002C` holding `titleText`, `titleDate` and `titleTime` outlines | FF §8, parser output |
 | Click anywhere to start a container; drag its top bar; drag its edge for width | `OutlineNode` `OffsetFromParentHoriz/Vert`, `LayoutMaxWidth`, `IsLayoutSizeSetByUser` | FF §8 |
-| Default positions: title at 36pt, first body note at (54, 90)pt | Observed in your files: x = 54pt (0.75″), y ≈ 90.56pt | FF §8 |
+| Default positions: title at 36pt, first body note at (54, 90)pt | Observed in OneNote's files: x = 54pt (0.75″), y ≈ 90.56pt | FF §8 |
 | Empty containers disappear when you leave them | OneNote outline lifecycle | (behavioural) |
 | Paragraphs with bold, italic, underline, strike, highlight, links | `RichTextOENode`: `RichEditTextUnicode`, `TextRunIndex` + `TextRunFormatting` → run model | FF §8 |
 | Links | Stored as a `U+FDDF HYPERLINK "url"` field code, which the importer turns into `href` runs | FF §8 |
 | Headings 1–6, Quote, Code; Enter after a heading gives Normal | `ParagraphStyleId` values (`h1`…); `NextStyle 0x1C00348A` | FF §8, schema |
 | Tab / Shift+Tab move an item with its children | `ElementChildNodes` nesting; Notecraft stores it flat with `depth` | FF §8 |
 | Bullets cycle • ◦ ▪; numbering cycles 1. a. i. by level | `NumberListFormat` (length-prefixed, `U+FFFD` + MSONFC scheme) | FF §8 |
-| To Do / Important / Question tags (⌘1/2/3), checkable | `NoteTagStates`, `ActionItemStatus` (bit 0 = done) | FF §8 |
+| All 29 default tags (⌘1–⌘9), several per paragraph, checkable | `NoteTagStates` (on `RichTextOENode` in Mac files), `ActionItemStatus` (bit 0 = done) | FF §8, §10 |
+| Custom tags, created in Notecraft or imported from OneNote | `NoteTagSharedDefinitionContainer 0x120043`: label, shape, colors; `ActionItemType` present → checkable | FF §10 |
 | Tables: Tab walks cells and adds a row at the end; drag column edges | `TableNode`/`RowNode`/`CellNode 0x60022–24`, `TableColumnWidths` | FF §8 |
 | Images inline or floating; paste or drop to add | `ImageNode 0x60011` in an outline or directly on the page | FF §7–8 |
 | Imported pictures without data show a placeholder with their recognized text | `<invfdo>` file-data references; OCR text in `RichEditTextUnicode` on the image node | FF §7 |
@@ -107,10 +109,13 @@ src/
   ui/VersionsPanel.tsx    version list, read-only preview banner, restore
   ui/TagsPanel.tsx        Find Tags (Tags Summary)
   ui/Dialogs.tsx          Move or Copy, Page Templates, Deleted Notes, Import from OneNote
-  ui/editor/InkLayer.tsx  pen, highlighter, eraser
+  ui/editor/InkLayer.tsx  pen, highlighter, shapes, eraser, lasso select
   model/tags.ts           OneNote's tag catalog
   model/templates.ts      built-in page templates
-  store/links.ts          page links and [[wiki]] links
+  store/links.ts          page, section and paragraph links; [[wiki]] links
+  store/recorder.ts       Insert › Record audio
+  lib/paste.ts            paste with formatting (clipboard HTML → paragraphs)
+  ui/prompt.ts            in-app text prompt (Electron has no window.prompt)
   electron/main.ts        desktop window, native menus, OneNote discovery and parsing (with cache pictures)
   electron/preload.ts     the bridge between the page and the main process
   ui/Sidebar.tsx, PageList.tsx, Toolbar.tsx, SearchPanel.tsx
@@ -118,15 +123,12 @@ src/
 
 ## Known limits
 
-- **Pasting drops formatting.** Pasted text arrives as plain text, one
-  paragraph per line, as in OneNote; inline styles are not kept.
 - **No nested tables.** Tables inside table cells aren't supported, and
   imported nested tables are flattened.
-- **Pictures in your OneNote backups have no image bytes**, so they import as
-  placeholders. The **Recover OneNote images from the local cache files**
-  session is working on this. `importOne.ts` already stores any bytes the
-  parser hands to `onAsset`. If the images come from separate cache files,
-  the import dialog will also need to accept those files.
+- **Some imported pictures are placeholders.** OneNote's Mac backups don't
+  store picture bytes; the desktop importer recovers them from OneNote's local
+  cache when it has them. The rest import as placeholders with their
+  recognized text.
 - **Versions are local.** They live in this browser's IndexedDB and are not
   part of **Export**. Images are stored once and shared between versions; an
   image no longer used by any version is not cleaned up yet.
@@ -142,7 +144,6 @@ already have the groundwork mapped in the format analysis:
 |---|---|
 | Author attribution per paragraph | `AuthorOriginal 0x20001D78`, `AuthorMostRecent 0x20001D79` → `ReadOnlyPersistablePropertyContainerForAuthor 0x120001` |
 | Reading `.onetoc2` directly (section order, groups, colors) | The `.onetoc2` table of contents. The parser reads its container; its semantics still need mapping (FF §10) |
-| Creating custom tags | `NoteTagSharedDefinitionContainer 0x120043`: label, shape, highlight and text colours |
 | Background images | `ImageNode.IsBackground 0x08001D13`, page margins `0x14001C4C–4F` |
 | Importing OneNote ink | `InkContainer 0x60047`, `InkStrokeNode 0x60048`; the strokes are not decoded yet (Notecraft's own ink works) |
 | Password-protected sections | `ObjectDataEncryptionKeyV2FNDX`, detected by the parser today |

@@ -1716,8 +1716,15 @@ kbd {
   display: flex;
 }
 .add-rows .add-row {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
   margin-right: 0;
+  white-space: nowrap;
+  gap: 6px;
+  padding: 7px 6px;
+}
+.add-rows .add-row:first-child {
+  flex: 0 0 auto;
 }
 .add-rows .add-row:last-child {
   margin-right: 8px;

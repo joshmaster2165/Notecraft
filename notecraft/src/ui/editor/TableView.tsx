@@ -1,6 +1,6 @@
 // TableNode → TableRowNode → TableCellNode. Each cell holds its own element
 // list; Tab walks cells and adds a row at the end, as in OneNote.
-import { memo, useState, type PointerEvent } from "react";
+import { memo, useState, type CSSProperties, type PointerEvent } from "react";
 import type { ListRef, TableEl } from "../../model/types.ts";
 import { LAYOUT } from "../../model/types.ts";
 import * as ops from "../../model/ops.ts";
@@ -9,6 +9,7 @@ import { dragPointer } from "../canvasApi.ts";
 import { Icon } from "../icons.tsx";
 import { ElementList } from "./ElementList.tsx";
 import { useReadOnly } from "./readOnly.ts";
+import { inkFor } from "../../lib/color.ts";
 
 type OutlineRef = { pageId: string; outlineId: string };
 
@@ -67,7 +68,7 @@ export const TableView = memo(function TableView({ table, listRef }: { table: Ta
                 {row.cells.map((cell) => {
                   const index = cells.findIndex((c) => c.cell === cell);
                   return (
-                    <td key={cell.id} style={cell.shading ? { background: cell.shading } : undefined}>
+                    <td key={cell.id} style={cell.shading ? ({ background: cell.shading, color: inkFor(cell.shading), "--ink": inkFor(cell.shading) } as CSSProperties) : undefined}>
                       <ElementList
                         elements={cell.elements}
                         listRef={{ pageId, outlineId, tableId: table.id, rowId: row.id, cellId: cell.id }}

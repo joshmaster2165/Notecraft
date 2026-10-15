@@ -1,5 +1,6 @@
 // The page surface: OneNote's reconstructed pan/zoom canvas hosting the title,
 // free-form outlines and floating images.
+import { inkFor } from "../lib/color.ts";
 import { memo, useMemo, useCallback, useEffect, useLayoutEffect, useRef, useState, type DragEvent, type KeyboardEvent, type PointerEvent, type RefObject } from "react";
 import { OneNoteCanvas } from "@re/canvas/OneNoteCanvas.tsx";
 import type { Rect } from "@re/canvas/viewport.ts";
@@ -218,7 +219,11 @@ const RULE_SPACING: Record<string, number> = { narrow: 18, standard: 22, college
 
 function paperBackground(paper: PaperStyle | undefined) {
   const style: Record<string, string> = {};
-  if (paper?.color) style.backgroundColor = paper.color;
+  if (paper?.color) {
+    style.backgroundColor = paper.color;
+    const ink = inkFor(paper.color);
+    if (ink) (style["--ink"] = ink), (style.color = ink);
+  }
   const rule = paper?.rule;
   if (rule && rule !== "none") {
     const gap = RULE_SPACING[rule]!;

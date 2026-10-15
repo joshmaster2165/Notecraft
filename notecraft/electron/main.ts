@@ -12,6 +12,9 @@ const isMac = process.platform === "darwin";
 const devUrl = process.env.NOTECRAFT_DEV_URL;
 let win: BrowserWindow | null = null;
 
+// A separate profile (tests, screenshots) keeps the real library untouched.
+if (process.env.NOTECRAFT_USER_DATA) app.setPath("userData", process.env.NOTECRAFT_USER_DATA);
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1360,
