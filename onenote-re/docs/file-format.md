@@ -627,6 +627,58 @@ Nothing marks an entry as a section or a group; that is decided on disk
 ones; entries are then sorted by ordering id. The root's color is the
 notebook's; a section's own `.one` color wins over its TOC entry's.
 
+### 14.1 Writing a notebook folder (`writer-rs`, `write_notebook`)
+
+No `.onetoc2` exists on the analysis machine (the backups in §1 are single
+sections of cloud notebooks), so the container follows [MS-ONESTORE] and
+OneNote's code; marks: **[spec]**, **[binary]**, **[files]** (the 14
+backups), **[inferred]**.
+
+- **Container [spec].** File type `{43FF2FA1-EFD9-4C76-9EE2-10EA5722765F}`,
+  format `{109ADD3F-…}`, all four `ffv*` 0x1B. One object space, root and
+  default, with a single OneNote 2007-style revision:
+  RevisionManifestListStartFND, RevisionManifestStart4FND (role 1, no
+  dependency, timeCreation 0), GlobalIdTableStartFNDX (one reserved byte),
+  GlobalIdTableEntryFNDX…, GlobalIdTableEndFNDX,
+  ObjectDeclarationWithRefCountFNDX… (body: CompactID, jci 1 / odcs 0, then
+  fHasOidReferences / fHasOsidReferences; cRef 1 per reference plus 1 for
+  the root), RootObjectReference2FNDX (role 1), RevisionManifestEndFND. No
+  object groups, file data or hashed chunk list.
+- **Transaction CRC [binary].** OneNote picks the CRC by file format version
+  (0x100d26380: above 0x21 zlib `crc32`, else `MsoCrc32Compute`, through the
+  same `(state, bytes)` callback, 0x10014f0e4 / 0x100ea639c), and starts the
+  running state at 0 (`str wzr` at 0x100d57dcc for the reference-count
+  CRC). The `.onetoc2` sentinel is therefore MsoCrc32(0, entries):
+  polynomial 0xAF, MSB first, no inversion (CRC-32/XFER). `crcName` uses the
+  `.one` CRC in both kinds of file [spec].
+- **Name [binary].** Every folder's table of contents is
+  `Open Notebook.onetoc2` (OneNote's resources hold "Open Notebook" and
+  ".onetoc2"); a section group folder gets its own **[inferred]**: readers
+  take any `*.onetoc2` there.
+- **Objects [spec].** Root `jcidPersistablePropertyContainerForTOC`:
+  `TOCEntryIndex_OidIndex` (left out when the folder is empty) and, on the
+  notebook's own, `NotebookColor` (a COLORREF; left out without a color).
+  Entries, sections first in the notebook's order then section groups:
+  `FileIdentityGuid` (the `.one` `guidFile`, or the group's `.onetoc2`
+  `guidFile` **[inferred]**), `NotebookElementOrderingID` 1, 2, 3…,
+  `FolderChildFilename` ("Name.one" or the folder name, `+` → `^M`,
+  `,` → `^J`), `NotebookColor` for sections (0xFFFFFFFF without a color).
+  `EnableHistory` is left at its default. Strings end in a NUL as in `.one`.
+- **Links [spec].** A `.one`'s `guidAncestor` is the `guidFile` of the
+  table of contents in its folder; a group's `.onetoc2` names its parent's.
+  The backups have a nil `guidAncestor` [files], as cloud notebooks have no
+  table of contents.
+- **Names.** Characters Windows or OneDrive refuse become "_", trailing dots
+  and spaces go, device names (CON, NUL, COM1…) get a "_", "~$" and "_vti_"
+  are defused, names are cut to 100 characters and made unique per folder
+  ignoring case ("Notes (2)"); `OneNote_RecycleBin` and the table of
+  contents' own name are reserved, and a group folder never ends in `.one`.
+  The section's exact name stays in `SectionDisplayName`.
+- **Checked by** `writer-rs/tests/notebook.rs`: this repository's reader
+  (`parse_notebook_toc`, header links), `onenote_parser::parse_notebook` on
+  the folder written to disk, and a verifier for the container and
+  MsoCrc32.
+
 ---
 
 ## 15. Crop, printouts, Ink to Shape, equations, encryption and media
@@ -799,21 +851,54 @@ tests rather than real ones.
   (23), ⟡ phantom (24), √ radical (25), ⁄ slashed fraction (26), ¦ stack
   (27), ⏟ stretch stack (28), _ subscript (29), _ sub/superscript (30),
   ^ superscript (31), ▁ underbar (32), ┴ upper limit (33).
+- **Storage [binary].** OneNote's save path for a paragraph
+  (0x1001640xx–0x1001645d8) splits the text into runs at every U+FDD0 or
+  U+FFFC (0x100164790). For an inline object it reads the object with
+  `ITextRange2::GetInlineObject` (vtable +0x2E0: type, align, char, char1,
+  char2, count, TeXStyle, cCol), marks the run's `ParagraphStyleObject` with
+  `TextRunIsEmbeddedObject` (0x08001E22) = true, and writes the
+  `MathData_*` into a separate property set (0x100e364dc: Type, cArg, cCol,
+  Align, Char, Char1, Char2, TeXStyle, FontAlign, each only when not zero).
+  That set is the run's element of **`TextRunData`** (0x40003499, an array
+  of property sets aligned with `TextRunFormatting`, written only when some
+  run has one, 0x10016669c; [MS-ONE] §2.2.90), not part of the run style.
+  The reader is 0x100e3616c.
 - **Inferred, not verified against a file** (no equation in the corpus):
-  OneNote keeps the built-up form in `RichEditTextUnicode` as
-  U+FDD0 *arg* U+FDEE *arg* … U+FDEF, nested, and puts `MathData_*` on the
-  run holding the U+FDD0. Arguments follow OMML's order: numerator then
+  the text keeps the built-up form in `RichEditTextUnicode` as
+  U+FDD0 *arg* U+FDEE *arg* … U+FDEF, nested (the save code scans the very
+  text it stores for U+FDD0). Arguments follow OMML's order: numerator then
   denominator; base then scripts; n-ary lower limit, upper limit, operand;
   radical degree then radicand; left scripts sub, sup, then base.
+- **Writer** (`writer-rs/src/math.rs`): parses the UnicodeMath linear form
+  with the grammar of Notecraft's equation editor and writes the objects
+  above: each U+FDD0 a one-character run whose style has
+  `TextRunIsEmbeddedObject`, its `MathData_*` in that run's `TextRunData`
+  element (empty sets for the other runs), every run `MathFormatting` in
+  Cambria Math. Constructs outside the grammar stay plain math text.
+  `writer-rs/tests/math.rs` decodes 19 equations back with a port of
+  `buildDown` and checks they parse to the same tree.
 - **Parser.** Runs keep their text, structure characters included, with
   `style.math`, `style.mathOrdinary`, `style.mathNoBuildup` and
   `style.mathObject = {type, args?, char?, char1?, char2?, align?, columns?,
   texStyle?, fontAlign?}`, present when `MathData_Type` is. Characters are
-  UTF-16 code units.
+  UTF-16 code units. `mathObject` comes from run *i*'s element of
+  `TextRunData` (parallel to `TextRunFormatting`), where OneNote keeps it.
+  When that element has no `MathData_Type`, the parser falls back to the
+  run's style object.
 - **Notecraft.** Each run of consecutive math runs is converted to UnicodeMath
   (`buildDown` in `notecraft/src/model/importOne.ts`). A paragraph whose
   other runs are blank becomes a `MathEl`. Text with inline equations stays a
   paragraph, with each equation as one run of linear text in Cambria Math.
+  - Function names (`sin`, `log`, `lim`… as in the equation engine) are a
+    single operand: `sin^2⁡x`, not `(sin)^2⁡x`.
+  - A function application is written name, U+2061, argument. U+2061
+    becomes a space after a `┬`/`┴` limit (`lim┬(n→∞) a_n`): the engine
+    skips U+2061 in a row, but would read it into the limit.
+  - A function's argument or an n-ary operand stays bare when it is one
+    element (`x`, `a_n`, `i^2`), and gets parentheses otherwise.
+  - `notecraft/src/model/importOne.test.ts` checks 13 equations written by
+    `writer-rs`, read by `onenote-re` and imported, from fixtures that
+    `writer-rs/tests/importer_fixture.rs` refreshes.
   **Fallback:** an object whose `MathData_Type` is missing or not one of the
   types above keeps its visible text, the arguments joined by spaces, and is
   counted in `stats.equationsUndecoded`.
@@ -924,6 +1009,10 @@ tests rather than real ones.
 | 0x100960F88 / 0x100960FBC | `IsPartOfSplitPrintout` setter / getter |
 | 0x1008A645C, 0x1008A6978 | read `InkShape2DInfo` / `InkLineShapeInfo` as objects |
 | 0x100164840 | text scan for U+FFFC / U+FDD0 object starts |
+| 0x10016489c | inline object: `TextRunIsEmbeddedObject` on the run style, `MathData_*` set |
+| 0x100e364dc / 0x100e3616c | write / read the `MathData_*` set (non-zero values only) |
+| 0x1001656d8 | add a run: style and `TextRunData` element |
+| 0x10016669c | write `TextRunIndex`, `TextRunFormatting`, `TextRunDataObject`, `TextRunData` |
 | RichEdit 0x59AA4, 0x58BA0 | structure characters U+FDD0 / U+FDEE / U+FDEF |
 | RichEdit `__const` 0x26BD2C | per-type UnicodeMath operators (OBJECTTYPE order) |
 | 0x1005D9AD4, 0x1006EF984 | `IRecordMedia` (recording code, attachment view) |
@@ -932,3 +1021,107 @@ tests rather than real ones.
 Addresses are in the arm64 slice of OneNote 16.114 (sha256 above) and of its
 `MicrosoftRichEdit.framework`. They were read with `llvm-objdump` from a
 scratch copy; no REA evidence bundle was recorded for §15.
+
+---
+
+## 16. Page styles: hidden title, page color, rule lines and grids
+
+None of these occur in the backups or the cache [files]: every PageNode there
+has only `GridStepX` / `GridStepY` = 0.5 and `GridGravityX` / `GridGravityY`
+= 0.25 (0x14001C9E–0x14001CA1, 410 of 410). What follows is read from
+OneNote for Mac's View commands (handler 0x10030b114, on the PageNode: the
+same set receives `PageWidth` and the margins) and is what `writer-rs`
+(`src/paper.rs`, `src/page.rs`) writes. `writer-rs/tests/paper.rs` checks it.
+
+### 16.1 Hidden title [binary]
+
+There is no "title hidden" property in use: `IsTitleVisible_V1` (0x08001CB1)
+has no code reference, and `PageTitleVisible` / `PageTitleHidden`
+(0x0800119A / 0x0800124F) are only command state. A page shows a title when
+its PageNode has a TitleNode child (0x100197754), and Hide Page Title deletes
+it ("The current page title, date, and time will be deleted", strman 0x0b
+#6). The writer leaves out the TitleNode and `StructureElementChildNodes`;
+`CachedTitleString` keeps the title so the page list shows it **[inferred]**.
+
+### 16.2 Page color [binary]
+
+| Property | ID | Value |
+|---|---|---|
+| PageColor | 0x14001D2A | COLORREF; absent = none |
+| PageBackgroundColor | 0x14001C90 | read first if present; not written |
+
+The command stores the gallery's value with `PageColor`'s color type
+(0x10030c44c → 0x1009da75c) or removes it for No Color. The renderer
+(0x1002731c4) takes `PageBackgroundColor`, else `PageColor`, treats
+0xFF000000 and 0xFFFFFFFF as none and falls back to `MsoGetSysColor(5)`, so
+the value is a COLORREF.
+
+### 16.3 Rule lines and grids [binary]
+
+Applying rule line style *n* (0x1009d9e7c; 0 = none) writes:
+
+| Property | ID | Value |
+|---|---|---|
+| PageStyleID | 0x0C00352D | *n* (u8) |
+| PageStyleLineGroups | 0x4000352C | array of line groups (element PropertyID 0x44000811) |
+| · LineGroupLines | 0x4000352F | array of lines |
+| · · LineColor | 0x14003533 | 0xAARRGGBB |
+| · · LineDistanceFromStart | 0x14003531 | units |
+| · · LineRepetitionDistance | 0x14003530 | units; 0 = a single line |
+| · LineGroupAngle | 0x1400352E | float, 0 = horizontal lines, 90 = vertical |
+| · LineGroupConversionFactor | 0x14003532 | float, half-inches per unit |
+| GridStepX, GridStepY | 0x14001C9E/9F | float, half-inches |
+| PageHorizontalLineColor | 0x14001CD5 | 0xAARRGGBB, kept if already set |
+| PageHorizontalLineType | 0x14001CD3 | 1 grid, 2 lines, 3 margin |
+| PageHorizontalLineDistance | 0x14001CD4 | float, half-inches |
+| PageVerticalLineType / Distance / Color | 0x14001CD6–CD8 | as above |
+
+The line groups come from a table built at start-up (0x100050d20, 32-byte
+entries at 0x1017b1260; written by 0x100ecbd3c, lines by 0x100ecc200), the
+older properties from resource strings "A,R,G,B,type,inches" (strman 0x25,
+two per style: horizontal, vertical; parsed by 0x1009d99b0):
+
+| *n* | Horizontal group | Vertical group | Strings |
+|---|---|---|---|
+| 1 | every 18 from 1, ×1/48 | single line at 35, red | L 0.186496055 / M 0 |
+| 2 | every 32 from 22, ×1/48 | same | L 0.33 / M 0 |
+| 3 | every 44 from 18, ×1/48 | same | L 0.46 / M 0 |
+| 4 | every 62 from 55, ×1/48 | same | L 0.65 / M 0 |
+| 5 | every 16 from 0, ×1/48 | every 16 from 0 | G 0.166666667 both |
+| 6 | every 10 from 0, ×2/25.4 | every 10 from 0 | G 0.3937 both |
+| 7 | every 15, ×2/25.4 | every 15 | G 0.59055 both |
+| 8 | every 20, ×2/25.4 | every 20 | G 0.7874 both |
+
+Lines are light blue (COLORREF 0x00FDEBCA, stored 0xFFCAEBFD), the margin red
+(0x005050FF, stored 0xFFFF5050): ×1/48 is a 96-dpi pixel and ×2/25.4 a
+millimetre, in half-inches. The legacy distance is twice the string's
+inches; the type letter maps G → 1, L → 2, M → 3, and 'N' removes the
+properties. `GridStepX` = `GridStepY` = 2·*d*/⌈4·*d*⌉ for the horizontal
+inches *d*, in float32.
+
+Rule line color (0x1009da7a4, gallery 0x100471fb0: COLORREF → 0xFF RR GG BB)
+sets `PageHorizontalLineColor`, and `PageVerticalLineColor` when the vertical
+type is 1 (grid); the line groups keep their default color. Applying a style
+keeps an existing `PageHorizontalLineColor`, and gives a grid's vertical
+lines the same color.
+
+**Which style is which [inferred].** The style numbers are not tied to names
+in code we found. OneNote's paper styles are named Narrow, College and
+Standard ruled and Small, Medium and Large grid (strman 0x6f #79–#7e), in
+the order of styles 1–3 and 5–7 by spacing (4 is a wider ruling, 8 a larger
+grid), so the writer maps Notecraft's `narrow`, `college`, `standard`,
+`grid-small`, `grid-medium` and `grid-large` to 1, 2, 3, 5, 6 and 7.
+
+### 16.4 Function map (§16)
+
+| Address | Role |
+|---|---|
+| 0x10030b114 | View command handler (paper, title, page size) |
+| 0x100197754 | is the title shown: a TitleNode child |
+| 0x10030c44c, 0x1009da75c | set `PageColor` |
+| 0x1002731c4 | read the page color (COLORREF, none, system window color) |
+| 0x1009d9e7c | apply rule line style *n* |
+| 0x100050d20, 0x100051550, 0x10005177c | build the style table |
+| 0x100ecbd3c, 0x100ecc200 | write `PageStyleID`, `PageStyleLineGroups`, lines |
+| 0x1009d9978, 0x1009d99b0 | style → resource strings → legacy line values |
+| 0x1009da7a4, 0x100471fb0 | rule line color |

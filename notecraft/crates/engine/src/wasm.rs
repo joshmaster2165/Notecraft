@@ -73,6 +73,22 @@ pub fn export_one(section_json: &str, file_name: Option<String>) -> Result<JsVal
     Ok(o.into())
 }
 
+/// `{bytes: Uint8Array (zip), fileName, warnings}` for Export › OneNote notebook in the browser.
+#[wasm_bindgen]
+pub fn export_one_notebook(notebook_json: &str) -> Result<JsValue, JsError> {
+    let notebook: serde_json::Value = serde_json::from_str(notebook_json).map_err(|e| JsError::new(&e.to_string()))?;
+    let out = crate::one::export_notebook_zip(&notebook).map_err(|e| JsError::new(&e))?;
+    let o = js_sys::Object::new();
+    js_sys::Reflect::set(&o, &"bytes".into(), &js_sys::Uint8Array::from(out.bytes.as_slice()).into()).ok();
+    js_sys::Reflect::set(&o, &"fileName".into(), &out.file_name.into()).ok();
+    let warnings = js_sys::Array::new();
+    for w in out.warnings {
+        warnings.push(&w.into());
+    }
+    js_sys::Reflect::set(&o, &"warnings".into(), &warnings).ok();
+    Ok(o.into())
+}
+
 fn sealed_from(json: &str) -> Result<crate::lock::Sealed, JsError> {
     serde_json::from_str(json).map_err(|e| JsError::new(&e.to_string()))
 }

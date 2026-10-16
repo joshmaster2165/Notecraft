@@ -11,6 +11,9 @@
 /// JCIDs ([MS-ONE] §2.2, [MS-ONESTORE] §2.6.14). Bit 0x20000 marks a property
 /// set, 0x40000 a graph node, 0x80000 file data, 0x100000 read-only.
 pub mod jcid {
+    /// jcidPersistablePropertyContainerForTOC and …ForTOCSection: the
+    /// notebook (or section group) and its entries in a `.onetoc2`.
+    pub const PERSISTABLE_PROPERTY_CONTAINER_FOR_TOC: u32 = 0x0002_0001;
     pub const AUTHOR: u32 = 0x0012_0001;
     pub const SECTION_NODE: u32 = 0x0006_0007;
     pub const PAGE_SERIES_NODE: u32 = 0x0006_0008;
@@ -89,6 +92,31 @@ pub mod prop {
     pub const LIST_RESTART: u32 = 0x1400_1cb7;
     pub const IS_LAYOUT_SIZE_SET_BY_USER: u32 = 0x0800_1cbd;
     pub const NOTEBOOK_COLOR: u32 = 0x1400_1cbe;
+    // Paper style (PageNode), from OneNote for Mac's property-name table and
+    // code (docs/file-format.md §16).
+    pub const GRID_STEP_X: u32 = 0x1400_1c9e;
+    pub const GRID_STEP_Y: u32 = 0x1400_1c9f;
+    pub const GRID_GRAVITY_X: u32 = 0x1400_1ca0;
+    pub const GRID_GRAVITY_Y: u32 = 0x1400_1ca1;
+    pub const PAGE_HORIZONTAL_LINE_TYPE: u32 = 0x1400_1cd3;
+    pub const PAGE_HORIZONTAL_LINE_DISTANCE: u32 = 0x1400_1cd4;
+    pub const PAGE_HORIZONTAL_LINE_COLOR: u32 = 0x1400_1cd5;
+    pub const PAGE_VERTICAL_LINE_TYPE: u32 = 0x1400_1cd6;
+    pub const PAGE_VERTICAL_LINE_DISTANCE: u32 = 0x1400_1cd7;
+    pub const PAGE_VERTICAL_LINE_COLOR: u32 = 0x1400_1cd8;
+    pub const PAGE_COLOR: u32 = 0x1400_1d2a;
+    pub const PAGE_STYLE_LINE_GROUPS: u32 = 0x4000_352c;
+    pub const PAGE_STYLE_ID: u32 = 0x0c00_352d;
+    pub const LINE_GROUP_ANGLE: u32 = 0x1400_352e;
+    pub const LINE_GROUP_LINES: u32 = 0x4000_352f;
+    pub const LINE_REPETITION_DISTANCE: u32 = 0x1400_3530;
+    pub const LINE_DISTANCE_FROM_START: u32 = 0x1400_3531;
+    pub const LINE_GROUP_CONVERSION_FACTOR: u32 = 0x1400_3532;
+    pub const LINE_COLOR: u32 = 0x1400_3533;
+    pub const NOTEBOOK_ELEMENT_ORDERING_ID: u32 = 0x1400_1cb9;
+    pub const TOC_ENTRY_INDEX_OID_INDEX: u32 = 0x2400_1cf6;
+    pub const FOLDER_CHILD_FILENAME: u32 = 0x1c00_1d6b;
+    pub const FILE_IDENTITY_GUID: u32 = 0x1c00_1d94;
     pub const LAYOUT_RESOLVE_CHILD_COLLISIONS: u32 = 0x0800_1cdc;
     pub const IS_READ_ONLY: u32 = 0x0800_1cde;
     pub const LAYOUT_MINIMUM_OUTLINE_WIDTH: u32 = 0x1400_1cec;
@@ -131,6 +159,16 @@ pub mod prop {
     pub const CELL_SHADING_COLOR: u32 = 0x1400_1e26;
     pub const IMAGE_ALT_TEXT: u32 = 0x1c00_1e58;
     pub const MATH_FORMATTING: u32 = 0x0800_3401;
+    pub const MATH_DATA_TYPE: u32 = 0x1400_344f;
+    pub const MATH_DATA_C_ARG: u32 = 0x1400_3450;
+    pub const MATH_DATA_C_COL: u32 = 0x0c00_3451;
+    pub const MATH_DATA_CHAR: u32 = 0x1000_3453;
+    pub const MATH_DATA_CHAR1: u32 = 0x1000_3454;
+    pub const MATH_DATA_CHAR2: u32 = 0x1000_3455;
+    /// One property set per text run, aligned with TextRunFormatting
+    /// ([MS-ONE] §2.2.90); OneNote keeps an inline object's MathData_* there.
+    pub const TEXT_RUN_DATA: u32 = 0x4000_3499;
+    pub const TEXT_RUN_IS_EMBEDDED_OBJECT: u32 = 0x0800_1e22;
     pub const INK_STROKE_PROPERTIES: u32 = 0x2000_3409;
     pub const INK_DIMENSIONS: u32 = 0x1c00_340a;
     pub const INK_PATH: u32 = 0x1c00_340b;
@@ -162,8 +200,10 @@ pub mod prop {
     pub const PARAGRAPH_ALIGNMENT: u32 = 0x0c00_3477;
     pub const NOTE_TAG_DEFINITION_OID: u32 = 0x2000_3488;
     pub const NOTE_TAG_STATES: u32 = 0x4000_3489;
-    /// The element PropertyID of a NoteTagStates array, as OneNote writes it.
-    pub const NOTE_TAG_STATE: u32 = 0x4400_0811;
+    /// The element PropertyID of an ArrayOfPropertyValues as OneNote writes
+    /// it (seen on NoteTagStates; OneNote's code gives every property-set
+    /// array the same element type).
+    pub const ARRAY_ELEMENT: u32 = 0x4400_0811;
     pub const SCHEMA_REVISION_IN_ORDER_TO_WRITE: u32 = 0x1400_348b;
     pub const SECTION_DISPLAY_NAME: u32 = 0x1c00_349b;
     pub const PICTURE_WIDTH: u32 = 0x1400_34cd;

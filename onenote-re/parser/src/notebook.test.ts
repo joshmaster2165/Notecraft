@@ -206,3 +206,32 @@ test("an untitled page stays untitled: the date/time line is not its title", () 
   const fromOutline = section(none, { pageProps: titled([["IsTitleText", "Plans"], ["IsTitleDate", "Thursday, October 1, 2026"]]) });
   assert.equal(fromOutline.section.pages[0]!.title, "Plans");
 });
+
+test("equations: a run's TextRunData element carries its MathData_*, ahead of the run style", () => {
+  const json = section((b, rev) => {
+    const embedded = b.object(rev, J.ParagraphStyleObject!, [V.bool(P.MathFormatting!, true), V.bool(P.TextRunIsEmbeddedObject!, true)]);
+    const styled = b.object(rev, J.ParagraphStyleObject!, [V.bool(P.MathFormatting!, true), V.u32(P.MathData_Type!, 16)]);
+    const math = b.object(rev, J.ParagraphStyleObject!, [V.bool(P.MathFormatting!, true)]);
+    const rich = b.object(rev, J.RichTextOENode!, [
+      V.str(P.RichEditTextUnicode!, "﷐﷐x﷮2﷯﷮y﷯"),
+      V.bytes(P.TextRunIndex!, u32s(1, 2, 3)),
+      // Runs: U+FDD0 (radical, in TextRunData), U+FDD0 (superscript, style says fraction), "x", the rest.
+      V.oids(P.TextRunFormatting!, [embedded, styled, math, math]),
+      V.sets(P.TextRunData!, [[V.u32(P.MathData_Type!, 25), V.u32(P.MathData_cArg!, 2)], [V.u32(P.MathData_Type!, 31), V.u16(P.MathData_Char!, 0)], [], []]),
+    ]);
+    const oe = b.object(rev, J.OutlineElementNode!, [V.oids(P.ContentChildNodes!, [rich])]);
+    return [b.object(rev, J.OutlineNode!, [V.oids(P.ElementChildNodes!, [oe])])];
+  });
+  const rich = (json.section.pages[0]!.blocks[0] as OutlineBlock).children[0]!.content[0] as RichTextBlock;
+  assert.deepEqual(rich.runs.map((r) => r.style.mathObject), [{ type: 25, args: 2 }, { type: 31, char: 0 }, undefined, undefined]);
+
+  // No TextRunData: the run style's MathData_* still count.
+  const fallback = section((b, rev) => {
+    const styled = b.object(rev, J.ParagraphStyleObject!, [V.bool(P.MathFormatting!, true), V.u32(P.MathData_Type!, 16)]);
+    const rich = b.object(rev, J.RichTextOENode!, [V.str(P.RichEditTextUnicode!, "﷐a﷮b﷯"), V.oids(P.TextRunFormatting!, [styled])]);
+    const oe = b.object(rev, J.OutlineElementNode!, [V.oids(P.ContentChildNodes!, [rich])]);
+    return [b.object(rev, J.OutlineNode!, [V.oids(P.ElementChildNodes!, [oe])])];
+  });
+  const block = (fallback.section.pages[0]!.blocks[0] as OutlineBlock).children[0]!.content[0] as RichTextBlock;
+  assert.deepEqual(block.runs[0]!.style.mathObject, { type: 16 });
+});

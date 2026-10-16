@@ -8,14 +8,18 @@
 //! - Hyperlinks are a hidden field code in the text, `U+FDDF HYPERLINK "url"`,
 //!   in its own run (Hyperlink + Hidden + HyperlinkProtected), followed by the
 //!   display text (Hyperlink + HyperlinkProtected), as OneNote writes them.
-//! - Equations: the UnicodeMath linear form in a run with `MathFormatting`
-//!   (0x08003401). OneNote's built-up math objects (`TextRunData`) are not
-//!   written.
+//! - Equations: built up into RichEdit math objects ([`crate::math`]), every
+//!   run with `MathFormatting` (0x08003401) in Cambria Math. Each object's
+//!   U+FDD0 is a run of its own whose style has `TextRunIsEmbeddedObject`;
+//!   its `MathData_*` are that run's element of `TextRunData` (one property
+//!   set per run, empty for the others), as OneNote for Mac's save code does
+//!   (`file-format.md` §15.4).
 //! - NumberListNode (§2.2.25): `NumberListFormat` is length-prefixed; a
 //!   numbered format holds U+FFFD and an MSONFC scheme code.
 //! - Note tags: `NoteTagStates` (§2.2.88) on the content node, each pointing
 //!   at a shared `NoteTagSharedDefinitionContainer` (§2.2.41).
 
+use crate::math::{build_up, MathObject, MathPiece};
 use crate::model::{Align, ListStyle, Paragraph, Run, Tag};
 use crate::page::{align, half_inches, PageWriter, TitleText};
 use crate::propset::{ObjIdx, PropSet, Value};
@@ -190,6 +194,8 @@ struct Piece {
     units: Vec<u16>,
     run: Run,
     link: Link,
+    /// The math object starting here (the piece is its U+FDD0).
+    object: Option<MathObject>,
 }
 
 /// A link target safe inside the field code's quotes.
@@ -224,6 +230,7 @@ fn pieces(runs: &[Run]) -> Vec<Piece> {
                     units,
                     run: runs[i].clone(),
                     link: Link::None,
+                    object: None,
                 });
             }
             i += 1;
@@ -239,6 +246,7 @@ fn pieces(runs: &[Run]) -> Vec<Piece> {
                 units: clean_text(&r.text),
                 run: r.clone(),
                 link: Link::Text,
+                object: None,
             })
             .filter(|p| !p.units.is_empty())
             .collect();
@@ -248,12 +256,40 @@ fn pieces(runs: &[Run]) -> Vec<Piece> {
                 units: marker.encode_utf16().collect(),
                 run: first.run.clone(),
                 link: Link::Marker,
+                object: None,
             });
             out.extend(display);
         }
         i = j;
     }
     out
+}
+
+/// A run's TextRunData element: the math object's `MathData_*`, in the order
+/// and with the rule OneNote writes them (only values that are not zero),
+/// or an empty set for a run without one.
+fn math_data(object: Option<&MathObject>) -> PropSet {
+    let mut p = PropSet::new();
+    let Some(o) = object else { return p };
+    if o.kind != 0 {
+        p.u32(prop::MATH_DATA_TYPE, o.kind);
+    }
+    if o.args != 0 {
+        p.u32(prop::MATH_DATA_C_ARG, o.args);
+    }
+    if let Some(c) = o.columns.filter(|&c| c != 0) {
+        p.u8(prop::MATH_DATA_C_COL, c);
+    }
+    for (v, id) in [
+        (o.ch, prop::MATH_DATA_CHAR),
+        (o.ch1, prop::MATH_DATA_CHAR1),
+        (o.ch2, prop::MATH_DATA_CHAR2),
+    ] {
+        if let Some(v) = v.filter(|&v| v != 0) {
+            p.u16(id, v);
+        }
+    }
+    p
 }
 
 impl PageWriter<'_> {
@@ -279,7 +315,13 @@ impl PageWriter<'_> {
     }
 
     /// A ParagraphStyleObjectForText for one run.
-    fn run_style(&mut self, r: &Run, link: Link, math: bool) -> ObjIdx {
+    fn run_style(
+        &mut self,
+        r: &Run,
+        link: Link,
+        math: bool,
+        object: Option<&MathObject>,
+    ) -> ObjIdx {
         let mut p = PropSet::new();
         for (on, id) in [
             (r.bold, prop::BOLD),
@@ -311,12 +353,19 @@ impl PageWriter<'_> {
             .bool(prop::HYPERLINK, link != Link::None)
             .bool(prop::HYPERLINK_PROTECTED, link != Link::None)
             .bool(prop::HIDDEN, link == Link::Marker);
+        if object.is_some() {
+            p.bool(prop::TEXT_RUN_IS_EMBEDDED_OBJECT, true);
+        }
         self.shared(jcid::PARAGRAPH_STYLE_OBJECT, "text-style", p)
     }
 
     /// Text, run index and run styles of a paragraph.
     fn runs_props(&mut self, p: &mut PropSet, runs: &[Run], math: bool) {
-        let mut pieces = pieces(runs);
+        let pieces = pieces(runs);
+        self.pieces_props(p, pieces, math);
+    }
+
+    fn pieces_props(&mut self, p: &mut PropSet, mut pieces: Vec<Piece>, math: bool) {
         if math {
             for piece in &mut pieces {
                 if piece.run.font.is_none() {
@@ -325,7 +374,11 @@ impl PageWriter<'_> {
             }
         }
         if pieces.is_empty() {
-            let style = self.run_style(&Run::default(), Link::None, math);
+            let run = Run {
+                font: math.then(|| "Cambria Math".to_string()),
+                ..Run::default()
+            };
+            let style = self.run_style(&run, Link::None, math, None);
             p.oids(prop::TEXT_RUN_FORMATTING, vec![style]);
             return;
         }
@@ -333,22 +386,32 @@ impl PageWriter<'_> {
         let mut text: Vec<u16> = Vec::new();
         let mut ends: Vec<u32> = Vec::new();
         let mut styles: Vec<ObjIdx> = Vec::new();
+        let mut data: Vec<Option<&MathObject>> = Vec::new();
         let mut last: Option<(ObjIdx, Link)> = None;
         for piece in &pieces {
-            let style = self.run_style(&piece.run, piece.link, math);
-            let merge = last == Some((style, piece.link)) && piece.link != Link::Marker;
+            let style = self.run_style(&piece.run, piece.link, math, piece.object.as_ref());
+            // A link's field code and each math object start stay runs of
+            // their own.
+            let merge = last == Some((style, piece.link))
+                && piece.link != Link::Marker
+                && piece.object.is_none();
             text.extend_from_slice(&piece.units);
             if merge {
                 *ends.last_mut().expect("a run to extend") = text.len() as u32;
             } else {
                 ends.push(text.len() as u32);
                 styles.push(style);
+                data.push(piece.object.as_ref());
             }
             last = Some((style, piece.link));
         }
         ends.pop(); // the last run ends with the text
         p.u16(prop::RICH_EDIT_TEXT_LANG_ID, LCID_EN_US as u16)
             .oids(prop::TEXT_RUN_FORMATTING, styles);
+        if data.iter().any(Option::is_some) {
+            let sets = data.into_iter().map(math_data).collect();
+            p.set(prop::TEXT_RUN_DATA, Value::Sets(prop::ARRAY_ELEMENT, sets));
+        }
         if !ends.is_empty() {
             p.bytes(
                 prop::TEXT_RUN_INDEX,
@@ -360,28 +423,48 @@ impl PageWriter<'_> {
 
     /// RichTextOENode for a paragraph.
     pub(crate) fn rich_text(&mut self, key: &str, para: &Paragraph, tags: &[Tag]) -> ObjIdx {
-        self.text_node(key, para, tags, false)
+        self.text_node(key, para, tags, None)
     }
 
-    /// An equation: its linear form as math-formatted text.
+    /// An equation, built up into OneNote's math objects ([`crate::math`]).
     pub(crate) fn math(&mut self, key: &str, linear: &str, tags: &[Tag]) -> ObjIdx {
-        let para = Paragraph {
-            runs: vec![Run {
-                text: linear.to_string(),
-                ..Run::default()
-            }],
-            ..Paragraph::empty()
-        };
-        self.text_node(key, &para, tags, true)
+        let pieces = build_up(linear)
+            .into_iter()
+            .map(|m| match m {
+                MathPiece::Text(t) => Piece {
+                    units: t.encode_utf16().collect(),
+                    run: Run::default(),
+                    link: Link::None,
+                    object: None,
+                },
+                MathPiece::Start(o) => Piece {
+                    units: vec![crate::math::START as u16],
+                    run: Run::default(),
+                    link: Link::None,
+                    object: Some(o),
+                },
+            })
+            .collect();
+        self.text_node(key, &Paragraph::empty(), tags, Some(pieces))
     }
 
-    fn text_node(&mut self, key: &str, para: &Paragraph, tags: &[Tag], math: bool) -> ObjIdx {
+    /// `pieces` replaces the paragraph's runs (an equation's math text).
+    fn text_node(
+        &mut self,
+        key: &str,
+        para: &Paragraph,
+        tags: &[Tag],
+        pieces: Option<Vec<Piece>>,
+    ) -> ObjIdx {
         let idx = self.reserve("text", key, jcid::RICH_TEXT_OE_NODE);
         let style = self.paragraph_style(style_id(&para.style));
         let mut p = PropSet::new();
         self.stamp(&mut p);
         p.oid(prop::PARAGRAPH_STYLE, style);
-        self.runs_props(&mut p, &para.runs, math);
+        match pieces {
+            Some(pieces) => self.pieces_props(&mut p, pieces, true),
+            None => self.runs_props(&mut p, &para.runs, false),
+        }
         let (lha, code) = match para.align {
             Some(Align::Center) => (align::CENTER, Some(1)),
             Some(Align::Right) => (align::RIGHT, Some(2)),
@@ -570,7 +653,7 @@ impl PageWriter<'_> {
                 .u16(prop::ACTION_ITEM_STATUS, u16::from(done));
             sets.push(s);
         }
-        (!sets.is_empty()).then_some(Value::Sets(prop::NOTE_TAG_STATE, sets))
+        (!sets.is_empty()).then_some(Value::Sets(prop::ARRAY_ELEMENT, sets))
     }
 }
 

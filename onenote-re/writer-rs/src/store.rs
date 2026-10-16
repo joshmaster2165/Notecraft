@@ -19,22 +19,30 @@
 //! - A list is one fragment unless it outgrows [`FRAGMENT_LIMIT`]; earlier
 //!   fragments then end with a ChunkTerminatorFND, as OneNote's do.
 //! - FileNodeList IDs are handed out top-down from 0x10 (root list first).
-//! - One transaction commits every list; its sentinel holds the CRC-32 of the
-//!   entries before it ([`crate::crc`]).
+//! - One transaction commits every list; its sentinel holds the CRC of the
+//!   entries before it ([`crate::crc`]): CRC-32 in a `.one`, MsoCrc32 in a
+//!   `.onetoc2` ([MS-ONESTORE] §2.1.2).
+//!
+//! A `.onetoc2` table of contents is the same container with its own file
+//! type GUID and file format version 0x1B ([MS-ONESTORE] §2.3.1).
 
 use crate::crc;
 use crate::guid::Guid;
 use crate::WriteError;
 
 pub(crate) const GUID_FILE_TYPE_ONE: Guid = Guid::parse("{7B5C52E4-D88C-4DA7-AEB1-5378D02996D3}");
+pub(crate) const GUID_FILE_TYPE_ONETOC2: Guid =
+    Guid::parse("{43FF2FA1-EFD9-4C76-9EE2-10EA5722765F}");
 pub(crate) const GUID_FILE_FORMAT: Guid = Guid::parse("{109ADD3F-911B-49F5-A5D0-1791EDC8AED8}");
 const GUID_FDSO_HEADER: Guid = Guid::parse("{BDE316E7-2665-4511-A4C4-8D4D0B7A9EAC}");
 const GUID_FDSO_FOOTER: Guid = Guid::parse("{71FBA722-0F79-4A0B-BB13-899256426B24}");
 
 const FRAGMENT_HEADER_MAGIC: u64 = 0xa456_7ab1_f5f7_f4c4;
 const FRAGMENT_FOOTER_MAGIC: u64 = 0x8bc2_15c3_8233_ba4b;
-/// File format version of OneNote 2010 and later ([MS-ONESTORE] §2.3.1).
+/// File format versions ([MS-ONESTORE] §2.3.1): `.one` files of OneNote
+/// 2010 and later, and `.onetoc2` files.
 const FFV_ONE: u32 = 0x2a;
+const FFV_ONETOC2: u32 = 0x1b;
 /// Build number written to the four `bn*` header fields: OneNote 2010
 /// 14.0.4763.1000, the value in [MS-ONESTORE] §3.1. Readers ignore it.
 const BUILD_NUMBER: u32 = 0x0fa1_29b4;
@@ -51,11 +59,16 @@ pub(crate) mod fnd {
     pub const OBJECT_SPACE_MANIFEST_LIST_START: u16 = 0x00c;
     pub const REVISION_MANIFEST_LIST_REFERENCE: u16 = 0x010;
     pub const REVISION_MANIFEST_LIST_START: u16 = 0x014;
+    pub const REVISION_MANIFEST_START4: u16 = 0x01b;
     pub const REVISION_MANIFEST_END: u16 = 0x01c;
     pub const REVISION_MANIFEST_START6: u16 = 0x01e;
+    pub const GLOBAL_ID_TABLE_START: u16 = 0x021;
     pub const GLOBAL_ID_TABLE_START2: u16 = 0x022;
     pub const GLOBAL_ID_TABLE_ENTRY: u16 = 0x024;
     pub const GLOBAL_ID_TABLE_END: u16 = 0x028;
+    pub const OBJECT_DECLARATION_WITH_REF_COUNT: u16 = 0x02d;
+    pub const OBJECT_DECLARATION_WITH_REF_COUNT2: u16 = 0x02e;
+    pub const ROOT_OBJECT_REFERENCE2: u16 = 0x059;
     pub const ROOT_OBJECT_REFERENCE3: u16 = 0x05a;
     pub const OBJECT_DECLARATION_FILE_DATA3_REF_COUNT: u16 = 0x072;
     pub const OBJECT_DECLARATION_FILE_DATA3_LARGE_REF_COUNT: u16 = 0x073;
@@ -125,9 +138,23 @@ pub(crate) struct Chunk {
     pub cb: u64,
 }
 
+/// The two kinds of revision store file.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum FileKind {
+    /// A section, `.one`.
+    Section,
+    /// A notebook or section group table of contents, `.onetoc2`.
+    Toc,
+}
+
 /// Inputs of the header besides the chunk references.
 pub(crate) struct HeaderInfo {
+    pub kind: FileKind,
     pub guid_file: Guid,
+    /// `guidFile` of the table of contents in the same folder (for a
+    /// section) or the parent folder (for a table of contents); nil when
+    /// there is none.
+    pub guid_ancestor: Guid,
     pub crc_name: u32,
 }
 
@@ -307,7 +334,10 @@ impl<'f> Writer<'f> {
             log.extend_from_slice(&id.to_le_bytes());
             log.extend_from_slice(&count.to_le_bytes());
         }
-        let crc = crc::crc32(&log);
+        let crc = match info.kind {
+            FileKind::Section => crc::crc32(&log),
+            FileKind::Toc => crc::mso_update(0, &log),
+        };
         log.extend_from_slice(&1u32.to_le_bytes());
         log.extend_from_slice(&crc.to_le_bytes());
         log.extend_from_slice(&u64::MAX.to_le_bytes());
@@ -317,7 +347,7 @@ impl<'f> Writer<'f> {
 
         let len = self.out.len() as u64;
         if len > u64::from(u32::MAX) {
-            return Err(too_large("the section"));
+            return Err(too_large("the file"));
         }
         // File version GUIDs are named after the content, so they change
         // when it does and stay put when it doesn't.
@@ -326,13 +356,17 @@ impl<'f> Writer<'f> {
         let guid_file_version = Guid::name_based(ns, &format!("file-version:{digest_name}"));
         let guid_deny_read = Guid::name_based(ns, &format!("deny-read:{digest_name}"));
 
+        let (file_type, ffv) = match info.kind {
+            FileKind::Section => (GUID_FILE_TYPE_ONE, FFV_ONE),
+            FileKind::Toc => (GUID_FILE_TYPE_ONETOC2, FFV_ONETOC2),
+        };
         let mut h = Vec::with_capacity(1024);
-        h.extend_from_slice(&GUID_FILE_TYPE_ONE.0); // guidFileType
+        h.extend_from_slice(&file_type.0); // guidFileType
         h.extend_from_slice(&info.guid_file.0); // guidFile
         h.extend_from_slice(&[0; 16]); // guidLegacyFileVersion
         h.extend_from_slice(&GUID_FILE_FORMAT.0); // guidFileFormat
         for _ in 0..4 {
-            h.extend_from_slice(&FFV_ONE.to_le_bytes()); // ffv* (4×)
+            h.extend_from_slice(&ffv.to_le_bytes()); // ffv* (4×)
         }
         h.extend_from_slice(&[0; 8]); // fcrLegacyFreeChunkList: fcrZero
         h.extend_from_slice(&u32::MAX.to_le_bytes()); // fcrLegacyTransactionLog: fcrNil
@@ -344,7 +378,7 @@ impl<'f> Writer<'f> {
         h.extend_from_slice(&0u32.to_le_bytes());
         h.extend_from_slice(&0u32.to_le_bytes()); // cbLegacyFreeSpaceInFreeChunkList
         h.extend_from_slice(&[0; 4]); // fNeedsDefrag, fRepairedFile, fNeedsGarbageCollect, fHasNoEmbeddedFileObjects
-        h.extend_from_slice(&[0; 16]); // guidAncestor: no table of contents yet
+        h.extend_from_slice(&info.guid_ancestor.0); // guidAncestor
         h.extend_from_slice(&info.crc_name.to_le_bytes()); // crcName
         match hashed {
             Some(c) => push_fcr64x32(&mut h, c)?, // fcrHashedChunkList

@@ -18,24 +18,30 @@
 //! assert_eq!(&bytes[0x30..0x34], &[0x3f, 0xdd, 0x9a, 0x10]); // guidFileFormat
 //! ```
 //!
+//! [`write_notebook`] writes a whole notebook as the folder OneNote keeps it
+//! in: an `Open Notebook.onetoc2` table of contents ([MS-ONE] §2.1.15) per
+//! folder, a `.one` per section, a subfolder per section group.
+//!
 //! The reader in `onenote-re/parser-rs` is the inverse; `docs/file-format.md`
 //! describes the format. Modules, bottom up:
-//! - [`crc`]: the CRC-32 of crcName, the transaction log and reference counts.
+//! - [`crc`]: the CRC-32 of crcName, the transaction log and reference
+//!   counts, and the MsoCrc32 of a `.onetoc2`'s transaction log.
 //! - `guid`: GUIDs, ExtendedGUIDs, name-based (deterministic) GUIDs.
 //! - `store`: header, transaction log, hashed chunk list, FileNodeList
 //!   fragments, FileNodes, FileDataStoreObjects.
 //! - `propset`: ObjectSpaceObjectPropSets (OID/OSID streams, PropertySets).
 //! - `space`: object spaces, revision manifests, object groups, global id
-//!   tables, declarations and reference counts.
-//! - `section`, `page`, `text`, `content`, `ink`, `media`: the [MS-ONE]
-//!   objects for sections, pages, outlines, rich text, lists, note tags,
-//!   tables, pictures, attachments, ink and equations.
+//!   tables, declarations and reference counts (and the OneNote 2007-style
+//!   manifest of a `.onetoc2`).
+//! - `section`, `page`, `paper`, `text`, `math`, `content`, `ink`, `media`:
+//!   the [MS-ONE] objects for sections, pages, page styles, outlines, rich
+//!   text, equations, lists, note tags, tables, pictures, attachments and ink.
+//! - `toc`, `notebook`, `names`: tables of contents, notebook folders, and
+//!   file names Windows, OneDrive and macOS accept.
 //!
 //! Each section becomes one object space per page plus the section's, each
 //! with a single revision. Not written: page version history, conflict
-//! pages, paper color and rule lines, hidden titles, password protection,
-//! OneNote's built-up equation objects (equations are their linear text in
-//! math-formatted runs), handwriting inside outlines and recordings.
+//! pages, password protection, handwriting inside outlines and recordings.
 //!
 //! Output is deterministic: identities are name-based GUIDs derived from
 //! Notecraft ids, and nothing reads a clock, randomness, threads or files,
@@ -45,9 +51,13 @@ mod content;
 pub mod crc;
 mod guid;
 mod ink;
+mod math;
 mod media;
 mod model;
+mod names;
+mod notebook;
 mod page;
+mod paper;
 mod propset;
 mod schema;
 mod section;
@@ -55,6 +65,7 @@ mod space;
 mod store;
 mod text;
 mod time;
+mod toc;
 
 use std::fmt;
 
@@ -62,7 +73,7 @@ use serde_json::Value;
 
 use crate::guid::Guid;
 use crate::page::{write_page, Ctx};
-use crate::store::{fnd, FileNode, FileNodeList, HeaderInfo, Target, Writer};
+use crate::store::{fnd, FileKind, FileNode, FileNodeList, HeaderInfo, Target, Writer};
 
 /// Why a section could not be written.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -111,6 +122,25 @@ pub struct WriteOutput {
     pub warnings: Vec<String>,
 }
 
+/// A file of a written notebook.
+#[derive(Debug, Clone)]
+pub struct NotebookFile {
+    /// Relative and '/'-separated, starting with the notebook's folder:
+    /// `"Work/Open Notebook.onetoc2"`, `"Work/Meetings.one"`,
+    /// `"Work/Projects/Plan.one"`.
+    pub path: String,
+    pub bytes: Vec<u8>,
+}
+
+/// A written notebook: its folder's files, and what was left out or changed.
+#[derive(Debug, Clone)]
+pub struct NotebookOutput {
+    /// The notebook's table of contents first, then its sections, then each
+    /// section group's folder the same way.
+    pub files: Vec<NotebookFile>,
+    pub warnings: Vec<String>,
+}
+
 /// Namespace of every name-based GUID this crate makes.
 const NAMESPACE: Guid = Guid::parse("{5E7C1F2A-0B4D-4C8E-9A61-3D2F8B7E4C10}");
 
@@ -125,16 +155,56 @@ pub fn write_section_with(
     section: &Value,
     options: &WriteOptions,
 ) -> Result<WriteOutput, WriteError> {
+    let file_name = options
+        .file_name
+        .clone()
+        .unwrap_or_else(|| suggested_file_name(section));
+    let out = section_file(section, None, &file_name, Guid::NIL)?;
+    Ok(WriteOutput {
+        bytes: out.bytes,
+        warnings: out.warnings,
+    })
+}
+
+/// Write a Notecraft notebook (`Notebook` in `notecraft/src/model/types.ts`)
+/// as the folder OneNote keeps a notebook in: an `Open Notebook.onetoc2`
+/// table of contents and a `.one` file per section, and a subfolder with
+/// its own table of contents per section group. Locked sections (sealed
+/// pages, `pages: []`) are left out with a warning.
+pub fn write_notebook(notebook: &Value) -> Result<NotebookOutput, WriteError> {
+    notebook::write_notebook(notebook)
+}
+
+pub(crate) struct SectionFile {
+    pub bytes: Vec<u8>,
+    pub warnings: Vec<String>,
+    /// `Header.guidFile`, which the table of contents refers to.
+    pub guid_file: Guid,
+}
+
+/// The `.one` file of a section: `key` overrides the identity its GUIDs are
+/// named after (the section id), `file_name` is what it is saved as, and
+/// `guid_ancestor` the `guidFile` of the table of contents beside it.
+pub(crate) fn section_file(
+    section: &Value,
+    key: Option<&str>,
+    file_name: &str,
+    guid_ancestor: Guid,
+) -> Result<SectionFile, WriteError> {
     let model = model::Section::from_json(section)
         .ok_or_else(|| WriteError::InvalidInput("expected a JSON object".into()))?;
     let mut early_warnings = Vec::new();
     if section.get("locked").is_some_and(Value::is_object) {
-        early_warnings.push("the section is locked: its sealed pages are not written".to_string());
+        early_warnings.push(if model.pages.is_empty() {
+            "the section is locked: its sealed pages are not written".to_string()
+        } else {
+            "the section's password protection is not written".to_string()
+        });
     }
-    let key = if model.id.is_empty() {
-        format!("name:{}", model.name)
-    } else {
-        model.id.clone()
+    let key = match key {
+        Some(k) => k.to_string(),
+        None if model.id.is_empty() => format!("name:{}", model.name),
+        None => model.id.clone(),
     };
     let ns = Guid::name_based(NAMESPACE, &format!("section:{key}"));
     let mut ctx = Ctx::new(ns, model.created_at);
@@ -185,46 +255,29 @@ pub fn write_section_with(
         });
     }
 
-    let file_name = options
-        .file_name
-        .clone()
-        .unwrap_or_else(|| suggested_file_name(section));
+    let guid_file = Guid::name_based(ns, "file");
     let info = HeaderInfo {
-        guid_file: Guid::name_based(ns, "file"),
-        crc_name: crc::file_name_crc(&file_name),
+        kind: FileKind::Section,
+        guid_file,
+        guid_ancestor,
+        crc_name: crc::file_name_crc(file_name),
     };
     let mut w = Writer::new(&files.files);
     let root_chunk = w.list(root)?;
     let bytes = w.finish(root_chunk, &info)?;
-    Ok(WriteOutput {
+    Ok(SectionFile {
         bytes,
         warnings: ctx.warnings,
+        guid_file,
     })
 }
 
-/// The file name a section is saved under: its name, made safe for a file
-/// system, plus `.one`.
+/// The file name a section is saved under: its name, made safe for
+/// Windows, OneDrive and macOS, plus `.one`.
 pub fn suggested_file_name(section: &Value) -> String {
     let name = section.get("name").and_then(Value::as_str).unwrap_or("");
-    let mut safe: String = name
-        .chars()
-        .map(|c| {
-            if c.is_control() || "\\/:*?\"<>|".contains(c) {
-                '_'
-            } else {
-                c
-            }
-        })
-        .collect();
-    safe = safe
-        .trim()
-        .trim_end_matches('.')
-        .trim()
-        .chars()
-        .take(120)
-        .collect();
-    if safe.is_empty() {
-        safe = "Section".into();
-    }
-    format!("{safe}.one")
+    format!(
+        "{}.one",
+        names::safe_component(name, "Section", names::NAME_LIMIT)
+    )
 }

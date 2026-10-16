@@ -152,7 +152,7 @@ Evidence ID stays on the analysis machine and isn't part of the repository.
 | Password Protect This Section: AES-256-GCM with a PBKDF2 key, locks after 10 minutes | OneNote's own: `IsEncrypted 0x08001DC6`, `ObjectDataEncryptionKeyV2FNDX`; detected on import, not decrypted | FF §15.5 |
 | Insert › Record video; recordings and video files import as playable attachments | `IRecordMedia 0x14001D24`, `AudioRecording*`; media types sniffed from the bytes | FF §15.6 |
 | File › Export › Word document, with Word equations | WordprocessingML; equations as Office Math (OMML) | — |
-| Section › Export as OneNote section (.one) | The revision store written from scratch by [`onenote-re/writer-rs`](../onenote-re/writer-rs): header, transaction log, FileNodeList fragments, object spaces, property sets, file data | FF §1–8 |
+| Section › Export as OneNote section (.one); notebook › Export as OneNote notebook | The revision store written from scratch by [`onenote-re/writer-rs`](../onenote-re/writer-rs): header, transaction log, FileNodeList fragments, object spaces, property sets, file data; `.onetoc2` tables of contents per folder; equations as RichEdit math objects in `TextRunData`; paper colour and rule lines | FF §1–8, §14.1, §15.4, §16 |
 
 ## Structure
 
@@ -213,5 +213,4 @@ already have the groundwork mapped in the format analysis:
 | Author attribution per paragraph | `AuthorOriginal 0x20001D78`, `AuthorMostRecent 0x20001D79` → `ReadOnlyPersistablePropertyContainerForAuthor 0x120001` |
 | Background images | `ImageNode.IsBackground 0x08001D13`, page margins `0x14001C4C–4F` |
 | Handwriting inside text and OneNote's handwriting recognition | `TextRunDataObject` → InkDataNode; `RecognizedText*` 0x20054–57 (FF §13) |
-| Equations OneNote can edit after a `.one` export | Exported equations are their linear text in `MathFormatting` runs; writing OneNote's own math objects needs the U+FDD0/`MathData_*` layout of FF §15.4 in reverse |
 | Ink to Shape that survives a `.one` round trip | `InkShape2DInfo` / `InkLineShapeInfo` are serialized objects whose layout isn't decoded yet (FF §15.3) |

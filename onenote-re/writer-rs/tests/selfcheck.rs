@@ -590,3 +590,27 @@ fn many_objects_split_lists_and_large_reference_counts() {
     walk(page.contents()[0].outline().unwrap().items(), &mut count);
     assert_eq!(count, 3000);
 }
+
+#[test]
+fn notebook_sections_verify() {
+    let mut first = sample();
+    first["id"] = json!("nb-s1");
+    let mut second = sample();
+    second["id"] = json!("nb-s2");
+    second["name"] = json!("Second: copy");
+    second["groupId"] = json!("g");
+    let notebook = json!({
+        "id": "nb", "name": "Checked", "color": "#336699",
+        "sections": [first, second],
+        "groups": [{ "id": "g", "name": "Group" }]
+    });
+    let out = onenote_writer::write_notebook(&notebook).unwrap();
+    let mut sections = 0;
+    for f in out.files.iter().filter(|f| f.path.ends_with(".one")) {
+        let name = f.path.rsplit('/').next().unwrap();
+        verify(&f.bytes, name);
+        assert_ne!(f.bytes[0x80..0x90], [0; 16], "guidAncestor names the TOC");
+        sections += 1;
+    }
+    assert_eq!(sections, 2);
+}

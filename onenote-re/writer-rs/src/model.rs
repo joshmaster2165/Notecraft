@@ -35,6 +35,18 @@ pub(crate) struct Page {
     pub outlines: Vec<Outline>,
     pub images: Vec<FloatingImage>,
     pub ink: Vec<InkStroke>,
+    /// View › Hide Page Title.
+    pub hide_title: bool,
+    pub paper: Paper,
+}
+
+/// View › Paper Style.
+#[derive(Default)]
+pub(crate) struct Paper {
+    pub color: Option<Rgb>,
+    /// "none", "narrow", "standard", "college", "grid-small"…
+    pub rule: Option<String>,
+    pub rule_color: Option<Rgb>,
 }
 
 pub(crate) struct Outline {
@@ -273,6 +285,16 @@ impl Page {
                 .filter(|k| k.is_object())
                 .map(InkStroke::from_json)
                 .collect(),
+            hide_title: flag(v, "hideTitle"),
+            paper: v
+                .get("paper")
+                .filter(|p| p.is_object())
+                .map(|p| Paper {
+                    color: color(p, "color"),
+                    rule: s(p, "rule"),
+                    rule_color: color(p, "ruleColor"),
+                })
+                .unwrap_or_default(),
         }
     }
 }

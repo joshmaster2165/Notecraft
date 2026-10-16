@@ -18,7 +18,7 @@ import { store } from "./store.ts";
 import { addImportedVersions } from "./versionStore.ts";
 import { flushLibrary, persistSelection } from "./persist.ts";
 import { forStorage } from "./locks.ts";
-import { exportDocx, exportOneNote, recognizeShape, renderPdf } from "../engine.ts";
+import { exportDocx, exportOneNote, exportOneNoteNotebook, recognizeShape, renderPdf } from "../engine.ts";
 
 const lib = () => store.getState().lib;
 
@@ -452,6 +452,34 @@ export async function exportOneNoteSection(sectionId?: Id) {
     ].filter(Boolean);
     store.toast([`Saved ${name}`, ...notes].join(" · "));
     if (out.warnings.length) console.warn("Notecraft: .one export", out.warnings);
+  } catch (e) {
+    store.toast(`Couldn't export to OneNote: ${(e as Error).message ?? e}`);
+  }
+}
+
+/**
+ * Notebook › Export as OneNote notebook: the notebook folder OneNote opens
+ * (a .onetoc2 per folder, a .one per section, subfolders for section groups).
+ * Locked sections are left out; unlocked protected ones go without their password.
+ */
+export async function exportOneNoteNotebookFolder(notebookId?: Id) {
+  const nb = lib().notebooks.find((n) => n.id === (notebookId ?? store.getState().ui.notebookId));
+  if (!nb) return;
+  const locked = nb.sections.filter((s) => ops.isSealedShut(s));
+  const plain = nb.sections.filter((s) => s.locked && !ops.isSealedShut(s)).length;
+  store.toast(`Writing “${nb.name}” as a OneNote notebook…`);
+  try {
+    // Notebook export carries sections and groups only: no Deleted Notes.
+    const { trash: _trash, ...rest } = nb;
+    const out = await exportOneNoteNotebook({ ...rest, sections: nb.sections.filter((s) => !ops.isSealedShut(s)).map(({ locked: _l, ...s }) => s) });
+    if (!out) return;
+    const notes = [
+      locked.length ? `${locked.length} locked section${locked.length === 1 ? "" : "s"} left out (unlock to include)` : "",
+      plain ? "protected sections are written without their password" : "",
+      out.warnings.length ? `${out.warnings.length} thing${out.warnings.length === 1 ? "" : "s"} couldn't be written exactly (see the console)` : "",
+    ].filter(Boolean);
+    store.toast([`Saved ${out.saved.split(/[\\/]/).pop()}`, ...notes].join(" · "));
+    if (out.warnings.length) console.warn("Notecraft: OneNote notebook export", out.warnings);
   } catch (e) {
     store.toast(`Couldn't export to OneNote: ${(e as Error).message ?? e}`);
   }
