@@ -122,8 +122,8 @@ OneNote's own increments and limits (25–500%), and each page reopens where
 you left it.
 
 **Desktop app** for macOS, Windows and Linux with native menus, plus print
-and export to PDF, Word (`.docx`, with real equations), OneNote (`.one`),
-Markdown or a portable `.notecraft.json`.
+and export to PDF, Word (`.docx`, with real equations), OneNote (a section
+or a whole notebook folder), Markdown or a portable `.notecraft.json`.
 
 </td>
 </tr>
@@ -149,6 +149,12 @@ Parsing happens on your machine; nothing is uploaded. Tags (including your
 custom ones), tables, pictures, ink, links, alignment, spacing and fonts come
 across. OneNote's password-protected sections are detected but not opened:
 unlock them in OneNote, then import them again.
+
+**Back to OneNote:** **Export as OneNote notebook** (notebook menu) writes the
+folder OneNote opens. In OneNote for Windows choose **File › Open** and pick its
+`Open Notebook.onetoc2`. To get it into OneDrive, move the folder into your
+OneDrive folder with the OneDrive app, which turns it into a cloud notebook;
+uploading it through the OneDrive website doesn't.
 
 ## AI and agents
 
