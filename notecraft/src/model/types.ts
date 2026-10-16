@@ -85,6 +85,20 @@ export interface Section {
   groupId?: Id;
   /** Set when the section came from a .one file. */
   source?: { file: string; guidFile?: string; importedAt: string };
+  /**
+   * Password Protect This Section: the pages, sealed (AES-256-GCM, key from
+   * the password). While the section is locked `pages` is empty.
+   */
+  locked?: { sealed: SealedPages; hint?: string };
+}
+
+export interface SealedPages {
+  version: number;
+  kdf: string;
+  iterations: number;
+  salt: string;
+  nonce: string;
+  data: string;
 }
 
 export type PageLevel = 1 | 2 | 3;
@@ -122,8 +136,10 @@ export interface InkStroke {
   width: number;
   /** Flat [x0, y0, x1, y1, …] in page points. */
   points: number[];
-  /** Drawn with a shape tool: straight segments, no smoothing. */
+  /** Drawn with a shape tool or converted by Ink to Shape: straight segments, no smoothing. */
   shape?: boolean;
+  /** What Ink to Shape recognized (OneNote's InkShape2DInfo / InkLineShapeInfo). */
+  shapeKind?: string;
 }
 
 export interface Outline {
@@ -222,6 +238,22 @@ export interface ImageData {
   filename?: string;
   /** Text OneNote recognised in the picture. */
   ocrText?: string;
+  /**
+   * Picture › Crop, in OneNote's terms (ImageCroppedTopLeftX/YPercentage,
+   * ImageCroppedWidth/HeightPercentage). `src` holds the cropped pixels;
+   * `original` keeps the uncropped picture so the crop can be changed.
+   */
+  crop?: CropRect;
+  original?: { src: string; width: number; height: number };
+  /** One page of a File Printout (OneNote's IsPrintoutPage). */
+  printout?: { file: string; page: number; pages: number };
+}
+
+export interface CropRect {
+  topLeftXPercentage: number;
+  topLeftYPercentage: number;
+  widthPercentage: number;
+  heightPercentage: number;
 }
 
 export interface ImageEl extends ElementBase {
@@ -236,7 +268,13 @@ export interface FileEl extends ElementBase {
   src?: string;
 }
 
-export type Element = ParagraphEl | TableEl | ImageEl | FileEl;
+/** Insert › Equation: UnicodeMath linear format, built up to MathML by the Rust engine. */
+export interface MathEl extends ElementBase {
+  kind: "math";
+  linear: string;
+}
+
+export type Element = ParagraphEl | TableEl | ImageEl | FileEl | MathEl;
 
 export interface FloatingImage extends ImageData {
   id: Id;

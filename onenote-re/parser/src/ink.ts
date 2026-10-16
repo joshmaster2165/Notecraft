@@ -27,6 +27,23 @@ export interface InkStroke {
   penTip?: number;
   /** InkBias: what OneNote thought the stroke was. */
   bias?: "handwriting" | "drawing" | "both";
+  /** Draw › Ink to Shape: OneNote recognized this stroke as a shape (file-format.md §15.3). */
+  shape?: InkShapeInfo;
+}
+
+/**
+ * The recognized-shape property of a stroke (or of its ink container). The
+ * blob's layout is not decoded: `points` stay the stroke's own ink, which for
+ * a converted shape is the clean outline OneNote drew.
+ */
+export interface InkShapeInfo {
+  /** InkShape2DInfo (2-D shapes) or InkLineShapeInfo (lines and arrows). */
+  source: "shape2d" | "line";
+  byteLength: number;
+  /** The first 256 bytes, hex. */
+  data: string;
+  /** InkShape2DInfoModifiedProxy / InkLineShapeInfoModifiedProxy. */
+  modifiedProxy?: number;
 }
 
 export interface InkBlock {

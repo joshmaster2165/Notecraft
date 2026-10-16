@@ -145,6 +145,14 @@ Evidence ID stays on the analysis machine and isn't part of the repository.
 | Importing a `.one` brings OneNote's own page history (badged "OneNote", with its original author and time) | `PageManifestNode.VersionHistoryGraphSpaceContextNodes` → `VersionHistoryContent 0x6003C` → `VersionProxy 0x6003D` → historical revision | FF §12 |
 | Imported ink: page drawings become editable strokes; handwriting inside notes becomes an inline drawing | `InkContainer 0x60014` → `InkDataNode` → `InkStrokeNode`; `InkPath` multi-byte deltas in HIMETRIC | FF §13 |
 | Open a OneNote notebook folder: section order, colors and section groups | `.onetoc2` `TOCEntryIndex_OidIndex`, `FolderChildFilename`, `NotebookElementOrderingID`, `NotebookColor`; subfolders are groups | FF §14 |
+| Picture › Crop: drag the edges; Reset brings the whole picture back | `ImageCropped{TopLeftX,TopLeftY,Width,Height}Percentage` 0x140012F5–F8, fractions of the whole picture; the uncropped picture is kept | FF §15.1 |
+| Insert › File Printout: each page of a PDF as a picture under the attachment | `IsPrintoutPage 0x08001D85` and `OriginalPageNumber` on each picture; OneNote renders pages with `CPdfToPrintout::RenderPageAsPng` | FF §15.2 |
+| Draw › Ink to Shape, as you draw or on lassoed ink | `InkShape2DInfo 0x1C001DAA` / `InkLineShapeInfo 0x1C001DAC` next to the ink; Notecraft's recognizer is its own (the Mac build ships an empty one) | FF §15.3 |
+| Insert › Equation: type UnicodeMath (OneNote's linear format) or LaTeX, Enter builds it up | RichEdit math: `MathFormatting 0x08003401` runs, U+FDD0/U+FDEE/U+FDEF object marks, `MathData_*` per object; imported equations come back as UnicodeMath | FF §15.4 |
+| Password Protect This Section: AES-256-GCM with a PBKDF2 key, locks after 10 minutes | OneNote's own: `IsEncrypted 0x08001DC6`, `ObjectDataEncryptionKeyV2FNDX`; detected on import, not decrypted | FF §15.5 |
+| Insert › Record video; recordings and video files import as playable attachments | `IRecordMedia 0x14001D24`, `AudioRecording*`; media types sniffed from the bytes | FF §15.6 |
+| File › Export › Word document, with Word equations | WordprocessingML; equations as Office Math (OMML) | — |
+| Section › Export as OneNote section (.one) | The revision store written from scratch by [`onenote-re/writer-rs`](../onenote-re/writer-rs): header, transaction log, FileNodeList fragments, object spaces, property sets, file data | FF §1–8 |
 
 ## Structure
 
@@ -205,5 +213,5 @@ already have the groundwork mapped in the format analysis:
 | Author attribution per paragraph | `AuthorOriginal 0x20001D78`, `AuthorMostRecent 0x20001D79` → `ReadOnlyPersistablePropertyContainerForAuthor 0x120001` |
 | Background images | `ImageNode.IsBackground 0x08001D13`, page margins `0x14001C4C–4F` |
 | Handwriting inside text and OneNote's handwriting recognition | `TextRunDataObject` → InkDataNode; `RecognizedText*` 0x20054–57 (FF §13) |
-| Password-protected sections | `ObjectDataEncryptionKeyV2FNDX`, detected by the parser today |
-| Write `.one` files | The writer routines are mapped: fragment create/finalize `FUN_100d32b74`/`FUN_100d32d8c`, FileDataStoreObject writer `FUN_100d1be84` (FF §9) |
+| Equations OneNote can edit after a `.one` export | Exported equations are their linear text in `MathFormatting` runs; writing OneNote's own math objects needs the U+FDD0/`MathData_*` layout of FF §15.4 in reverse |
+| Ink to Shape that survives a `.one` round trip | `InkShape2DInfo` / `InkLineShapeInfo` are serialized objects whose layout isn't decoded yet (FF §15.3) |

@@ -3,6 +3,8 @@
 <plist version="1.0">
 <dict>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Notecraft records audio notes into your pages when you choose Insert › Record audio.</string>
+  <string>Notecraft records audio and video notes into your pages when you choose Insert › Record audio or Record video.</string>
+  <key>NSCameraUsageDescription</key>
+  <string>Notecraft records video notes into your pages when you choose Insert › Record video.</string>
 </dict>
 </plist>

@@ -2,7 +2,7 @@
 import type { Element, Id, Library, ListRef, NoteTag, Page, Run } from "../model/types.ts";
 import { LAYOUT } from "../model/types.ts";
 import * as ops from "../model/ops.ts";
-import { importNotebookJson, importOneFile, type ImportResult } from "../model/importOne.ts";
+import { importNotebookJsonAsync, importOneFile, type ImportResult } from "../model/importOne.ts";
 import { assembleNotebook, type FolderSection, type FolderToc } from "../model/notebookImport.ts";
 import { parseToc } from "../model/parser.ts";
 import { desktop, type FoundSection } from "../desktop.ts";
@@ -17,6 +17,8 @@ import { pageHref } from "./links.ts";
 import { store } from "./store.ts";
 import { addImportedVersions } from "./versionStore.ts";
 import { flushLibrary, persistSelection } from "./persist.ts";
+import { forStorage } from "./locks.ts";
+import { exportDocx, exportOneNote, recognizeShape, renderPdf } from "../engine.ts";
 
 const lib = () => store.getState().lib;
 
@@ -77,9 +79,17 @@ export function newSection() {
   return s.id;
 }
 
+/** False (with a note) when the section is locked: pages can't be added to it. */
+function canAddPages(sectionId: Id): boolean {
+  const section = ops.findSection(lib(), sectionId)?.section;
+  if (!section || !ops.isSealedShut(section)) return true;
+  store.toast(`Unlock “${section.name}” before adding pages to it.`);
+  return false;
+}
+
 export function newPage(opts: { asSubpage?: boolean } = {}) {
   const { sectionId, pageId } = store.getState().ui;
-  if (!sectionId) return;
+  if (!sectionId || !canAddPages(sectionId)) return;
   const page = store.edit((d) => {
     const after = pageId ?? undefined;
     const base = after ? ops.findPage(d, after)?.page.level ?? 1 : 1;
@@ -95,10 +105,17 @@ export function deletePage(pageId: Id) {
   const pages = hit.section.pages;
   const i = pages.indexOf(hit.page);
   const neighbour = pages[i + 1] ?? pages[i - 1];
-  store.edit((d) => ops.trashPage(d, pageId));
+  // Deleted Notes are stored unsealed, so pages of a protected section are deleted outright.
+  const sealed = !!hit.section.locked;
+  store.edit((d) => {
+    if (!sealed) return ops.trashPage(d, pageId);
+    ops.deletePage(d, pageId);
+    const left = ops.findSection(d, hit.section.id)?.section;
+    if (left && !left.pages.length) left.pages.push(ops.emptyPage());
+  });
   const s = ops.findSection(lib(), hit.section.id)?.section;
   selectPage(neighbour?.id ?? s!.pages[0]!.id);
-  store.toast(`Moved “${hit.page.title || "Untitled page"}” to Deleted Notes · ⌘Z to undo`);
+  store.toast(sealed ? `Deleted “${hit.page.title || "Untitled page"}” · ⌘Z to undo` : `Moved “${hit.page.title || "Untitled page"}” to Deleted Notes · ⌘Z to undo`);
 }
 
 export function deleteSection(sectionId: Id) {
@@ -114,13 +131,14 @@ export function deleteSection(sectionId: Id) {
 
 export function restoreFromTrash(notebookId: Id, index: number) {
   const id = store.edit((d) => ops.restoreFromTrash(d, notebookId, index));
-  if (!id) return;
+  if (!id) return store.toast("Unlock a section first: pages can't be restored into a locked section.");
   if (ops.findPage(lib(), id)) selectPage(id);
   else selectSection(id);
   store.toast("Restored from Deleted Notes");
 }
 
 export function movePage(pageId: Id, sectionId: Id, copy: boolean) {
+  if (!canAddPages(sectionId)) return;
   const id = store.edit((d) => ops.movePageToSection(d, pageId, sectionId, copy));
   if (!id) return;
   const hit = ops.findPage(lib(), id);
@@ -141,7 +159,7 @@ export function newSectionGroup(parentId?: Id) {
 
 export function newPageFromTemplate(template: Page) {
   const { sectionId, pageId } = store.getState().ui;
-  if (!sectionId) return;
+  if (!sectionId || !canAddPages(sectionId)) return;
   const page = store.edit((d) => ops.createPageFromTemplate(d, sectionId, template, pageId ?? undefined));
   selectPage(page.id);
 }
@@ -156,10 +174,13 @@ export function saveCurrentPageAsTemplate(name: string) {
 /** Insert > File. OneNote refuses very large attachments; so does Notecraft. */
 export const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 
-export function insertAttachments(files: File[], target: { ref: ListRef; afterId: Id } | { pageId: Id; x: number; y: number }) {
+/** Recordings may be longer: video stops itself at this size. */
+export const MAX_RECORDING_BYTES = 100 * 1024 * 1024;
+
+export function insertAttachments(files: File[], target: { ref: ListRef; afterId: Id } | { pageId: Id; x: number; y: number }, maxBytes = MAX_ATTACHMENT_BYTES) {
   for (const file of files) {
-    if (file.size > MAX_ATTACHMENT_BYTES) {
-      store.toast(`“${file.name}” is larger than 25 MB, so it wasn't attached.`);
+    if (file.size > maxBytes) {
+      store.toast(`“${file.name}” is larger than ${Math.round(maxBytes / 1048576)} MB, so it wasn't attached.`);
       continue;
     }
     const reader = new FileReader();
@@ -241,7 +262,7 @@ export interface SummaryItem {
  */
 export function createTagSummaryPage(groups: [string, SummaryItem[]][]) {
   const sectionId = store.getState().ui.sectionId;
-  if (!sectionId || !groups.length) return;
+  if (!sectionId || !groups.length || !canAddPages(sectionId)) return;
   const pageId = store.edit((d) => {
     const page = ops.createPage(d, sectionId);
     page.title = "Tags Summary";
@@ -331,6 +352,129 @@ export function insertImageFiles(files: File[], target: { ref: ListRef; afterId:
   }
 }
 
+type InsertTarget = { ref: ListRef; afterId: Id } | { pageId: Id; x: number; y: number };
+
+/** Put elements in order after the target paragraph, or in a new outline. */
+function insertElements(target: InsertTarget, els: Element[]) {
+  store.edit((d) => {
+    if ("ref" in target) {
+      let after = target.afterId;
+      for (const el of els) (ops.insertAfter(d, target.ref, after, el), (after = el.id));
+    } else {
+      const { outline } = ops.createOutline(d, target.pageId, target.x, target.y, els[0]);
+      outline.elements.push(...els.slice(1));
+    }
+  });
+}
+
+/** Insert › Equation: an empty equation, ready to type its linear form. */
+export function insertEquation(target: InsertTarget) {
+  const el = ops.mathElement();
+  insertElements(target, [el]);
+  store.focus(el.id);
+}
+
+export const MAX_PRINTOUT_PAGES = 60;
+
+const readDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(file);
+  });
+
+/**
+ * Insert › File Printout: the PDF attached, then each of its pages as a
+ * picture (OneNote's IsPrintoutPage pictures), rendered by the Rust engine.
+ */
+export async function insertPrintout(file: File, target: InsertTarget) {
+  if (!/\.pdf$/i.test(file.name) && file.type !== "application/pdf") return store.toast("File Printout works with PDF files. Use Insert › File to attach other documents.");
+  if (file.size > MAX_ATTACHMENT_BYTES) return store.toast(`“${file.name}” is larger than 25 MB, so it wasn't inserted.`);
+  store.toast(`Inserting a printout of “${file.name}”…`);
+  try {
+    const src = await readDataUrl(file);
+    const out = await renderPdf(src, 2, MAX_PRINTOUT_PAGES);
+    if (!out.pages.length) return store.toast(`“${file.name}” has no pages to print.`);
+    const attachment: Element = { id: newId("e"), kind: "file", depth: 0, name: file.name, size: file.size, src };
+    const pictures: Element[] = out.pages.map((p, i) => {
+      const width = Math.min(640, Math.round(p.widthPt));
+      const height = Math.round((p.heightPt * width) / p.widthPt);
+      const label = `${file.name}, page ${i + 1} of ${out.pageCount}`;
+      return { id: newId("e"), kind: "image", depth: 0, image: { src: p.src, width, height, alt: label, filename: label, printout: { file: file.name, page: i + 1, pages: out.pageCount } } };
+    });
+    insertElements(target, [attachment, ...pictures]);
+    store.toast(out.pageCount > out.pages.length ? `Inserted the first ${out.pages.length} of ${out.pageCount} pages` : `Inserted ${out.pageCount} page${out.pageCount === 1 ? "" : "s"} of “${file.name}”`);
+  } catch (e) {
+    store.toast(`Couldn't print “${file.name}”: ${(e as Error).message ?? e}`);
+  }
+}
+
+/** File › Export › Word document, for the current page or a whole section. */
+export async function exportWord(scope: "page" | "section", sectionId?: Id) {
+  let pages: Page[];
+  let name: string;
+  if (scope === "page") {
+    const page = currentPage();
+    if (!page) return store.toast("Open a page to export it.");
+    pages = [page];
+    name = page.title || "Untitled page";
+  } else {
+    const section = ops.findSection(lib(), sectionId ?? store.getState().ui.sectionId ?? "")?.section;
+    if (!section) return;
+    if (section.locked && !section.pages.length) return store.toast(`Unlock “${section.name}” to export it.`);
+    pages = section.pages;
+    name = section.name;
+  }
+  try {
+    const saved = await exportDocx(pages, `${safeName(name)}.docx`);
+    if (saved) store.toast(`Saved ${saved.split(/[\\/]/).pop()}`);
+  } catch (e) {
+    store.toast(`Couldn't export to Word: ${(e as Error).message ?? e}`);
+  }
+}
+
+/** File › Export › OneNote section (.one), written by the Rust writer. */
+export async function exportOneNoteSection(sectionId?: Id) {
+  const section = ops.findSection(lib(), sectionId ?? store.getState().ui.sectionId ?? "")?.section;
+  if (!section) return;
+  if (ops.isSealedShut(section)) return store.toast(`Unlock “${section.name}” to export it.`);
+  store.toast(`Writing “${section.name}” as a OneNote section…`);
+  try {
+    // A protected section is exported unlocked: OneNote's own encryption isn't written.
+    const { locked: _, ...plain } = section;
+    const out = await exportOneNote(plain);
+    if (!out) return;
+    const name = out.saved.split(/[\\/]/).pop();
+    const notes = [
+      section.locked ? "without its password (OneNote's encryption isn't written)" : "",
+      out.warnings.length ? `${out.warnings.length} thing${out.warnings.length === 1 ? "" : "s"} couldn't be written exactly (see the console)` : "",
+    ].filter(Boolean);
+    store.toast([`Saved ${name}`, ...notes].join(" · "));
+    if (out.warnings.length) console.warn("Notecraft: .one export", out.warnings);
+  } catch (e) {
+    store.toast(`Couldn't export to OneNote: ${(e as Error).message ?? e}`);
+  }
+}
+
+/** " · 2 sections are locked in OneNote…" for an import summary. */
+function lockedNote(results: ImportResult[]): string {
+  const n = results.filter((r) => r.passwordProtected).length;
+  return n ? ` · ${n} section${n === 1 ? " is" : "s are"} password protected in OneNote: unlock ${n === 1 ? "it" : "them"} there and import again` : "";
+}
+
+/** Draw › Ink to Shape on existing ink: each stroke the engine recognizes becomes a clean shape. */
+export async function convertInkToShapes(pageId: Id, ids: Id[]) {
+  const page = ops.findPage(lib(), pageId)?.page;
+  const strokes = (page?.ink ?? []).filter((k) => ids.includes(k.id) && k.tool === "pen" && !k.shape);
+  if (!strokes.length) return store.toast("Select handwritten strokes with Lasso Select first.");
+  const found = await Promise.all(strokes.map(async (k) => [k.id, await recognizeShape(k.points).catch(() => null)] as const));
+  const shapes = new Map(found.flatMap(([id, s]) => (s ? [[id, s] as const] : [])));
+  if (!shapes.size) return store.toast("Those strokes don't look like shapes.");
+  store.edit((d) => ops.convertInkStrokes(d, pageId, shapes));
+  store.toast(`Converted ${shapes.size} of ${strokes.length} stroke${strokes.length === 1 ? "" : "s"} to shapes`);
+}
+
 // --- import / export ------------------------------------------------------------------
 
 export async function importFiles(files: File[]) {
@@ -380,7 +524,8 @@ export async function importFiles(files: File[]) {
     store.toast(
       `Imported ${results.length} section${results.length > 1 ? "s" : ""}, ${pages} page${pages === 1 ? "" : "s"}` +
         (savedVersions ? ` with ${savedVersions} earlier version${savedVersions === 1 ? "" : "s"}` : "") +
-        (missing ? ` · ${missing} image${missing === 1 ? "" : "s"} had no data in the file` : ""),
+        (missing ? ` · ${missing} image${missing === 1 ? "" : "s"} had no data in the file` : "") +
+        lockedNote(results),
     );
   }
   if (failures.length) store.toast(`Could not import ${failures.join("; ")}`);
@@ -407,6 +552,7 @@ export async function importNotebookFolder(files: { file: File; path: string }[]
   let pages = 0;
   let firstSection: Id | undefined;
   const failures: string[] = [];
+  const all: ImportResult[] = [];
   for (const [name, list] of byNotebook) {
     const placed: FolderSection[] = [];
     const tocs: FolderToc[] = [];
@@ -435,12 +581,14 @@ export async function importNotebookFolder(files: { file: File; path: string }[]
     });
     firstSection ??= assembled.sections[0]?.id;
     pages += results.reduce((n, r) => n + r.stats.pages, 0);
+    all.push(...results);
     await addImportedVersions(results.flatMap((r) => r.versions)).catch(() => 0);
   }
   if (firstSection) selectSection(firstSection);
   store.toast(
     `Imported ${byNotebook.size} notebook${byNotebook.size === 1 ? "" : "s"}, ${pages} page${pages === 1 ? "" : "s"}` +
-      (failures.length ? ` · ${failures.length} file${failures.length === 1 ? "" : "s"} failed` : ""),
+      (failures.length ? ` · ${failures.length} file${failures.length === 1 ? "" : "s"} failed` : "") +
+      lockedNote(all),
   );
   if (failures.length) console.error("Notecraft: notebook folder import failures", failures);
 }
@@ -532,8 +680,10 @@ export async function chooseLibraryFolder() {
 
 const safeName = (s: string) => s.replace(/[\\/:*?"<>|]+/g, "-").trim() || "untitled";
 
-export function exportNotebook() {
-  const nb = lib().notebooks.find((n) => n.id === store.getState().ui.notebookId);
+export async function exportNotebook() {
+  const id = store.getState().ui.notebookId;
+  // Password-protected sections stay sealed in the export.
+  const nb = (await forStorage(lib())).notebooks.find((n) => n.id === id);
   if (!nb) return;
   void download(`${safeName(nb.name)}.notecraft.json`, JSON.stringify({ notecraft: 1, notebook: nb }), "application/json");
 }
@@ -571,6 +721,7 @@ function elementsToMarkdown(els: Element[]): string[] {
       return [rows[0]!, `|${e.columns.map(() => " --- ").join("|")}|`, ...rows.slice(1)];
     }
     if (e.kind === "image") return [`${pad}![${e.image.alt ?? e.image.filename ?? "image"}](${e.image.src ? "embedded-image" : ""})`];
+    if (e.kind === "math") return [`${pad}$$${e.linear}$$`];
     return [`${pad}📎 ${e.name}`];
   });
 }
@@ -616,6 +767,7 @@ export async function importOneNoteNotebooks(
   let missing = 0;
   let history = 0;
   const failures: string[] = [];
+  const all: ImportResult[] = [];
   let firstSection: Id | undefined;
   for (const pick of picks) {
     const results: ImportResult[] = [];
@@ -624,7 +776,7 @@ export async function importOneNoteNotebooks(
       onProgress({ done, total, current: `${pick.notebook} › ${s.name}` });
       try {
         const { json, assets, fileName } = await desktop.parseOneNote(s.path);
-        const r = importNotebookJson(json, fileName, new Map(Object.entries(assets)));
+        const r = await importNotebookJsonAsync(json, fileName, new Map(Object.entries(assets)));
         results.push(r);
         files.push({ dir: s.dir ?? "", fileName, section: r.section, colorFromFile: r.colorFromFile });
       } catch (e) {
@@ -656,6 +808,7 @@ export async function importOneNoteNotebooks(
       pictures += r.stats.images - r.stats.imagesWithoutData;
       missing += r.stats.imagesWithoutData;
     }
+    all.push(...results);
     history += await addImportedVersions(results.flatMap((r) => r.versions)).catch(() => 0);
   }
   onProgress({ done, total });
@@ -663,7 +816,8 @@ export async function importOneNoteNotebooks(
   store.toast(
     `Imported ${pages} page${pages === 1 ? "" : "s"} with ${history} earlier version${history === 1 ? "" : "s"}` +
       (pictures + missing ? ` · ${pictures} of ${pictures + missing} pictures found in OneNote's cache` : "") +
-      (failures.length ? ` · ${failures.length} section${failures.length === 1 ? "" : "s"} failed` : ""),
+      (failures.length ? ` · ${failures.length} section${failures.length === 1 ? "" : "s"} failed` : "") +
+      lockedNote(all),
   );
   if (failures.length) console.error("Notecraft: OneNote import failures", failures);
 }

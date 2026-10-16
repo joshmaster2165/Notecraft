@@ -4,6 +4,7 @@ import { changedPages, VersionTracker } from "../model/versions.ts";
 import { findPage } from "../model/ops.ts";
 import { store } from "./store.ts";
 import { saveSnapshot } from "./versionStore.ts";
+import { isProtectedPage } from "./locks.ts";
 import type { Id, VersionReason } from "../model/types.ts";
 
 let tracker: VersionTracker | null = null;
@@ -12,6 +13,8 @@ export function startVersionTracking(): void {
   if (tracker) return;
   const t = new VersionTracker({
     save: (pageId, page, reason) => {
+      // Pages of password-protected sections keep no history: it would be stored unsealed.
+      if (isProtectedPage(pageId)) return;
       saveSnapshot(pageId, page, reason).catch((e) => console.error("Notecraft: could not save a page version", e));
     },
     currentPage: (pageId) => findPage(store.getState().lib, pageId)?.page,
@@ -43,6 +46,7 @@ export function startVersionTracking(): void {
  * replaces it). Duplicates of the latest version are dropped by the store.
  */
 export function settlePage(pageId: Id, reason: VersionReason): void {
+  if (isProtectedPage(pageId)) return;
   if (tracker?.hasPending(pageId)) return tracker.left(pageId, reason);
   const page = findPage(store.getState().lib, pageId)?.page;
   if (page) saveSnapshot(pageId, page, reason).catch((e) => console.error("Notecraft: could not save a page version", e));

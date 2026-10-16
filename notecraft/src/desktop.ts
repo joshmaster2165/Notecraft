@@ -45,6 +45,8 @@ export interface DiskLibrary {
   listVersions<T>(pageId: string): Promise<T[]>;
   getVersion<T>(id: string): Promise<T | null>;
   commitVersions(changes: VersionChanges): Promise<void>;
+  /** Delete assets nothing refers to any more; resolves to the deleted keys. */
+  pruneBlobs(): Promise<string[]>;
   /** Pages, notebooks or the index changed on disk by someone else (CLI, agent, sync). */
   onExternalChange(fn: (change: { pages: string[]; notebooks: string[]; library: boolean }) => void): () => void;
 }
@@ -105,6 +107,7 @@ function tauriBridge(): DesktopBridge {
       listVersions: (pageId) => invoke("versions_list", { pageId }),
       getVersion: (id) => invoke("versions_get", { id }),
       commitVersions: (changes) => invoke("versions_commit", { changes }),
+      pruneBlobs: () => invoke("library_prune_blobs"),
       onExternalChange: (fn) => on("library-changed", fn),
     },
   };

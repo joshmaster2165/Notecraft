@@ -2,6 +2,7 @@
 //! for the library folder, native menus, OneNote import and agent access.
 
 mod ai;
+mod engine;
 mod files;
 mod library;
 mod menu;
@@ -73,6 +74,7 @@ pub fn run() {
             library::versions_list,
             library::versions_get,
             library::versions_commit,
+            library::library_prune_blobs,
             files::save_file,
             files::open_external,
             files::reveal_library,
@@ -87,6 +89,15 @@ pub fn run() {
             ai::ai_http,
             agent_setup,
             automation_report,
+            engine::engine_crop,
+            engine::engine_render_pdf,
+            engine::engine_recognize_shape,
+            engine::engine_mathml,
+            engine::engine_export_docx,
+            engine::engine_export_one,
+            engine::engine_protect,
+            engine::engine_unlock,
+            engine::engine_reseal,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Notecraft");

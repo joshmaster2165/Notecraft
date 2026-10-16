@@ -71,6 +71,12 @@ export const Icon = {
   video: (p: P) => <svg {...base(p)}><rect x="2.5" y="5" width="11" height="10" rx="2" /><path d="m13.5 9 4-2.5v7l-4-2.5" /></svg>,
   wand: (p: P) => <svg {...base(p)}><path d="m3 17 9.5-9.5M11 6l3 3" /><path d="M14 2.5v2M17.5 6h-2M16.5 3.5l-1.4 1.4" /></svg>,
   text: (p: P) => <svg {...base(p)}><path d="M4 5h12M10 5v11M7 16h6" /></svg>,
+  lock: (p: P) => <svg {...base(p)}><rect x="4" y="9" width="12" height="8.5" rx="2" /><path d="M6.8 9V6.5a3.2 3.2 0 0 1 6.4 0V9" /></svg>,
+  unlock: (p: P) => <svg {...base(p)}><rect x="4" y="9" width="12" height="8.5" rx="2" /><path d="M6.8 9V6.5a3.2 3.2 0 0 1 6.2-1.1" /></svg>,
+  equation: (p: P) => <svg {...base(p)}><path d="M15 4.5H5l5 5.5-5 5.5h10" /></svg>,
+  printout: (p: P) => <svg {...base(p)}><path d="M5 2.5h7l3.5 3.5v11.5H5z" /><path d="M12 2.5V6h3.5M7.5 10h5M7.5 13h5" /></svg>,
+  inkShape: (p: P) => <svg {...base(p)}><path d="M3 15c2-4 3.5-8 6-8 2 0 1 5 3 5s2-3 3-4" /><rect x="11.5" y="2.5" width="6" height="6" rx="1" /></svg>,
+  word: (p: P) => <svg {...base(p)}><path d="M5 2.5h7l3.5 3.5v11.5H5z" /><path d="m7 9 1.3 5 1.7-4 1.7 4L13 9" /></svg>,
 };
 
 export function Logo({ size = 26 }: { size?: number }) {

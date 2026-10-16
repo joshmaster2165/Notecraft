@@ -30,6 +30,9 @@ pub fn outline(store: &LibraryStore) -> Result<Value> {
                 if let Some(g) = s["groupId"].as_str().and_then(group_name) {
                     out["group"] = json!(g);
                 }
+                if !s["locked"].is_null() {
+                    out["locked"] = json!(true);
+                }
                 out
             })
             .collect();
@@ -215,6 +218,10 @@ fn new_page(title: &str, now: &str, elements: Vec<Value>) -> Value {
 pub fn create_page(store: &LibraryStore, section: &str, title: &str, markdown: &str) -> Result<String> {
     let section_id = find_section(store, section)?;
     let (mut nb, si) = locate_section(store, &section_id)?;
+    if !nb["sections"][si]["locked"].is_null() {
+        // Its pages are sealed inside the notebook file; a plain page added here would be lost on unlock.
+        return Err(Error::Invalid(format!("section {section_id} is password protected: unlock it in Notecraft first")));
+    }
     let page = new_page(title, &now_iso(), markdown_elements(markdown));
     store.write_page(&page)?;
     if let Some(pages) = nb["sections"][si]["pages"].as_array_mut() {

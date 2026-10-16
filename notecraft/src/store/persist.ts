@@ -11,6 +11,8 @@ import { store } from "./store.ts";
 import { get, put, readLegacyLibrary } from "../lib/idb.ts";
 import { desktop } from "../desktop.ts";
 import { libraryChanges, savedStateOf, type SavedState } from "./diskSync.ts";
+import { forStorage, onForgetPlainCopies } from "./locks.ts";
+import { deleteVersionsOf } from "./versionStore.ts";
 
 const KEY = "library";
 
@@ -28,11 +30,13 @@ async function flush() {
   pending = null;
   saving = saving.then(async () => {
     try {
+      // Password-protected sections are written sealed, never as plain pages.
+      const stored = await forStorage(lib);
       if (desktop) {
-        const { changes, state, empty } = libraryChanges(diskState, lib);
+        const { changes, state, empty } = libraryChanges(diskState, stored);
         if (!empty) await desktop.library.save(changes);
         diskState = state;
-      } else await put("kv", lib, KEY);
+      } else await put("kv", stored, KEY);
       if (!pending) store.setMeta({ saveState: "saved" });
     } catch (e) {
       console.error("Notecraft: save failed", e);
@@ -47,6 +51,14 @@ export function flushLibrary(): Promise<void> {
   clearTimeout(saveTimer);
   return flush();
 }
+
+// A section was just password protected: write it sealed, then remove what
+// stored it plainly before (its page versions and, on disk, its pictures).
+onForgetPlainCopies(async (pageIds) => {
+  await flushLibrary();
+  await deleteVersionsOf(pageIds);
+  if (desktop) for (const key of await desktop.library.pruneBlobs()) diskState?.blobKeys.delete(key);
+});
 
 function watchChanges() {
   store.onLibraryChange = (next) => {

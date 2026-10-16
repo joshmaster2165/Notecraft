@@ -7,6 +7,7 @@ import * as ops from "../../model/ops.ts";
 import { newId } from "../../lib/id.ts";
 import { store, useStore, type ShapeKind } from "../../store/store.ts";
 import { currentZoom } from "../canvasApi.ts";
+import { recognizeShape } from "../../engine.ts";
 
 /** Smooth path through the points using midpoint quadratic curves. */
 export function strokePath(p: number[]): string {
@@ -281,7 +282,19 @@ export const InkLayer = memo(function InkLayer({ page, readOnly }: { page: Page;
       if (stroke.points.length >= 4) store.edit((d) => ops.addInkStroke(d, page.id, stroke));
       return;
     }
-    store.edit((d) => ops.addInkStroke(d, page.id, { ...stroke, points: points.current }));
+    const done = { ...stroke, points: points.current };
+    if (draw.inkToShape && done.tool === "pen" && done.points.length >= 6) {
+      // Ink to Shape: keep showing the stroke until the engine answers.
+      setLive(done);
+      void recognizeShape(done.points)
+        .catch(() => null)
+        .then((shape) => {
+          store.edit((d) => ops.addInkStroke(d, page.id, shape ? { ...done, points: shape.points, shape: true, shapeKind: shape.kind } : done));
+          setLive((l) => (l === done ? null : l));
+        });
+      return;
+    }
+    store.edit((d) => ops.addInkStroke(d, page.id, done));
   };
 
   return (

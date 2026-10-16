@@ -6,7 +6,7 @@ from the binary and file-format analysis in [`../../onenote-re`](../../onenote-r
 
 ✅ done · 🟡 partial · ⬜ not yet · — not applicable to a local-first app
 
-**56 of 67 done**, 3 partial, 7 not yet, 1 not applicable.
+**61 of 67 done**, 2 partial, 3 not yet, 1 not applicable.
 
 ## Organize
 
@@ -21,7 +21,7 @@ from the binary and file-format analysis in [`../../onenote-re`](../../onenote-r
 | Deleted Notes (60 days) | ✅ | Restore, delete permanently, empty |
 | Page Templates (built-in + Save as Template) | ✅ | 7 built-ins plus your own |
 | Page Versions | ✅ | Notecraft snapshots plus OneNote's own history on import |
-| Password Protected Section | ⬜ | Detected in imports; not decrypted or created |
+| Password Protected Section | ✅ | AES-256-GCM, key from the password (PBKDF2-SHA256, 600,000 rounds). Lock now, Lock All (⌘⌥L), locks after 10 minutes away. Locked pages never reach disk unencrypted. OneNote's own locked sections are detected on import, not opened: unlock them in OneNote first |
 | Sync, sharing, co-authoring | — | Local-first: the library is a folder you can sync with any service |
 
 ## Write
@@ -48,13 +48,13 @@ from the binary and file-format analysis in [`../../onenote-re`](../../onenote-r
 | Tables: insert, rows/columns above/below/left/right, delete | ✅ | |
 | Table borders, shading, sort, column widths, Tab navigation | ✅ | |
 | Pictures: insert, paste, drop, resize, inline or floating | ✅ | |
-| Picture alt text, rotate, crop | 🟡 | Alt text and rotate; no crop |
+| Picture alt text, rotate, crop | ✅ | Crop keeps OneNote's four percentages (`ImageCropped*Percentage`), so it can be changed or undone |
 | Text in pictures (OCR) searchable | ✅ | Imported OCR text, and **Text** on any picture (AI vision) |
 | File attachments | ✅ | Up to 25 MB |
-| File printouts | ⬜ | |
+| File printouts | ✅ | Insert › File Printout: each PDF page as a picture (`IsPrintoutPage`), rendered by the Rust engine; the PDF stays attached |
 | Insert Date / Time / Date and Time | ✅ | ⌥⇧D, ⌥⇧T, ⌥⇧F |
-| Equations, Ink to Math | ⬜ | |
-| Audio and video recording | 🟡 | Audio recording with AI transcription; no video recording (AI video generation instead) |
+| Equations, Ink to Math | 🟡 | Insert › Equation in UnicodeMath (OneNote's linear format) or LaTeX, built up to MathML; Word export writes real Office Math. No Ink to Math |
+| Audio and video recording | ✅ | Microphone and camera; AI transcription for audio |
 | Spell check | ✅ | Operating-system spellchecker |
 | Undo / redo | ✅ | App-wide, typing coalesced |
 | Paste with formatting | ✅ | Keeps emphasis, links, colors, headings and lists; ⌥⇧⌘V pastes plain text |
@@ -66,7 +66,7 @@ from the binary and file-format analysis in [`../../onenote-re`](../../onenote-r
 | Pen, highlighter (colors, thickness) | ✅ | Stored in page points, so ink stays on its text at every zoom |
 | Stroke eraser | ✅ | |
 | Lasso select, move ink | ✅ | Drag to move, Delete to remove |
-| Shapes, Ink to Shape, Ink to Text | 🟡 | Shapes; Ink to Text (AI vision). No Ink to Shape |
+| Shapes, Ink to Shape, Ink to Text | ✅ | Ink to Shape as you draw or on lassoed ink: lines, arrows, triangles, rectangles, diamonds, polygons, ellipses. Ink to Text (AI vision) |
 | Pressure sensitivity | ⬜ | |
 
 ## View
@@ -99,7 +99,7 @@ from the binary and file-format analysis in [`../../onenote-re`](../../onenote-r
 | Export notebook | ✅ | `.notecraft.json` |
 | Export page | ✅ | Markdown |
 | Print / save as PDF | ✅ | |
-| Export `.one`, `.docx` | ⬜ | The `.one` writer routines are mapped (file-format.md §9) |
+| Export `.one`, `.docx` | 🟡 | Word for a page or section, with real Word equations. OneNote section (`.one`) from the section menu, written by [`onenote-re/writer-rs`](../../onenote-re/writer-rs) and checked with an independent reader; not yet opened in OneNote itself |
 
 ## Desktop app
 

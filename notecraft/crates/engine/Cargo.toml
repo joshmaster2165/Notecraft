@@ -1,0 +1,33 @@
+[package]
+name = "notecraft-engine"
+version = "0.3.0"
+edition = "2021"
+description = "Notecraft's document engine: picture crop, Ink to Shape, PDF printouts, equations, Word and OneNote export and section locks. Native and WebAssembly."
+repository = "https://github.com/joshmaster2165/Notecraft"
+publish = false
+
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[features]
+default = []
+wasm = ["dep:wasm-bindgen", "dep:serde-wasm-bindgen", "dep:js-sys", "dep:getrandom"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp"] }
+hayro = { version = "0.8", features = ["embed-fonts"] }
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+aes-gcm = "0.10"
+onenote-writer = { path = "../../../onenote-re/writer-rs" }
+pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
+sha2 = "0.10"
+rand_core = { version = "0.6", features = ["getrandom"] }
+getrandom = { version = "0.2", optional = true, features = ["js"] }
+wasm-bindgen = { version = "=0.2.129", optional = true }
+serde-wasm-bindgen = { version = "0.6", optional = true }
+js-sys = { version = "0.3", optional = true }
+
+[dev-dependencies]

@@ -35,6 +35,15 @@ export const SECTION_COLORS = ["#4f7cac", "#c46a2f", "#5b8c5a", "#9a5fb0", "#c24
 
 // --- lookup -------------------------------------------------------------------------
 
+/**
+ * A password-protected section that is locked: its pages exist only sealed,
+ * so nothing may add pages to it (they would be lost when it is unlocked).
+ * An unlocked one always has at least one page.
+ */
+export function isSealedShut(section: Section): boolean {
+  return !!section.locked && !section.pages.length;
+}
+
 export function findSection(lib: Library, sectionId: Id): { notebook: Notebook; section: Section } | undefined {
   for (const notebook of lib.notebooks) {
     const section = notebook.sections.find((s) => s.id === sectionId);
@@ -543,6 +552,17 @@ export function updateInlineImage(lib: Library, ref: ListRef, elId: Id, patch: P
   touch(lib, ref.pageId);
 }
 
+export function setMath(lib: Library, ref: ListRef, elId: Id, linear: string): void {
+  const el = getList(lib, ref)?.find((e) => e.id === elId);
+  if (el?.kind !== "math") return;
+  el.linear = linear;
+  touch(lib, ref.pageId);
+}
+
+export function mathElement(linear = ""): Element {
+  return { id: newId("e"), kind: "math", depth: 0, linear };
+}
+
 export function resizeInlineImage(lib: Library, ref: ListRef, elId: Id, width: number): void {
   const el = getList(lib, ref)?.find((e) => e.id === elId);
   if (el?.kind !== "image") return;
@@ -561,6 +581,7 @@ export function pageText(page: Page): string {
       if (e.kind === "text") parts.push(e.runs.map((r) => r.text).join(""));
       else if (e.kind === "table") e.rows.forEach((r) => r.cells.forEach((c) => walk(c.elements)));
       else if (e.kind === "image") parts.push(e.image.ocrText ?? e.image.alt ?? "");
+      else if (e.kind === "math") parts.push(e.linear);
       else parts.push(e.name);
     }
   };
@@ -740,7 +761,12 @@ export function restoreFromTrash(lib: Library, notebookId: Id, index: number): I
     nb.sections.push(item.section);
     return item.section.id;
   }
-  const section = nb.sections.find((s) => s.id === item.sectionId) ?? nb.sections[0]!;
+  const open = nb.sections.filter((s) => !isSealedShut(s));
+  const section = open.find((s) => s.id === item.sectionId) ?? open[0];
+  if (!section) {
+    nb.trash!.splice(index, 0, item);
+    return;
+  }
   section.pages.push({ ...item.page, level: 1 });
   return item.page.id;
 }
@@ -773,6 +799,17 @@ export function removeInkStrokes(lib: Library, pageId: Id, ids: Id[]): void {
   const hit = findPage(lib, pageId);
   if (!hit?.page.ink) return;
   hit.page.ink = hit.page.ink.filter((k) => !ids.includes(k.id));
+  touch(lib, pageId);
+}
+
+/** Ink to Shape: replace strokes with the shapes recognized for them. */
+export function convertInkStrokes(lib: Library, pageId: Id, shapes: Map<Id, { kind: string; points: number[] }>): void {
+  const hit = findPage(lib, pageId);
+  if (!hit?.page.ink) return;
+  for (const k of hit.page.ink) {
+    const s = shapes.get(k.id);
+    if (s) Object.assign(k, { points: s.points, shape: true, shapeKind: s.kind });
+  }
   touch(lib, pageId);
 }
 

@@ -10,12 +10,15 @@ import { PreviewBanner, VersionsPanel } from "./VersionsPanel.tsx";
 import { TagsPanel } from "./TagsPanel.tsx";
 import { AssistantPanel } from "./AssistantPanel.tsx";
 import { Dialogs } from "./Dialogs.tsx";
+import { LockedSection } from "./LockViews.tsx";
+import { RecordingPreview } from "./RecordingPreview.tsx";
+import { lockAll, lockState, useLockVersion } from "../store/locks.ts";
 import { FindBar } from "./FindBar.tsx";
 import { canvasApi } from "./canvasApi.ts";
 import { mod } from "./editor/Paragraph.tsx";
 import { desktop } from "../desktop.ts";
 import * as ops from "../model/ops.ts";
-import { currentPage, exportNotebook, exportPageMarkdown, newNotebook, newPage, newSection, newSectionGroup, printPage } from "../store/actions.ts";
+import { currentPage, exportNotebook, exportOneNoteSection, exportPageMarkdown, exportWord, newNotebook, newPage, newSection, newSectionGroup, printPage } from "../store/actions.ts";
 
 /** Native menu commands (desktop app) mapped onto the same actions as the UI. */
 /** Edit › Paste and Match Style: the clipboard's text, without formatting. */
@@ -44,6 +47,10 @@ function useDesktopCommands() {
       pastePlain: () => void pastePlainText(),
       exportNotebook: () => exportNotebook(),
       exportMarkdown: () => exportPageMarkdown(),
+      exportWordPage: () => void exportWord("page"),
+      exportWordSection: () => void exportWord("section"),
+      exportOneSection: () => void exportOneNoteSection(),
+      lockAll: () => void lockAll().then((n) => store.toast(n ? `Locked ${n} section${n === 1 ? "" : "s"}` : "No unlocked sections to lock")),
       print: () => printPage(),
       undo: () => (store.undo(), repairSelection()),
       redo: () => (store.redo(), repairSelection()),
@@ -92,6 +99,10 @@ function useGlobalShortcuts() {
         e.preventDefault();
         store.redo();
         repairSelection();
+      } else if (e.altKey && e.code === "KeyL") {
+        // OneNote's Lock All (⌘⌥L).
+        e.preventDefault();
+        void lockAll().then((n) => store.toast(n ? `Locked ${n} section${n === 1 ? "" : "s"}` : "No unlocked sections to lock"));
       } else if (k === "e") {
         e.preventDefault();
         store.setUi({ searchOpen: true });
@@ -154,6 +165,9 @@ export function App() {
   const findOpen = useStore((s) => s.ui.findOpen);
   const drawing = useStore((s) => s.ui.draw.tool !== "type");
   const preview = useStore((s) => (s.ui.preview && s.ui.preview.pageId === s.ui.pageId ? s.ui.preview : null));
+  const section = useStore((s) => (s.ui.sectionId ? ops.findSection(s.lib, s.ui.sectionId)?.section : undefined));
+  useLockVersion();
+  const locked = lockState(section) === "locked" ? section : undefined;
   const [dragging, setDragging] = useState(false);
   useGlobalShortcuts();
   useDesktopCommands();
@@ -194,7 +208,9 @@ export function App() {
         {findOpen && <FindBar />}
         {preview && <PreviewBanner version={preview.version} />}
         <div className="workspace-body">
-          {page ? (
+          {locked ? (
+            <LockedSection key={locked.id} section={locked} />
+          ) : page ? (
             preview ? (
               <PageCanvas page={{ ...preview.version.page, id: page.id }} version={preview.version.id} />
             ) : (
@@ -210,6 +226,7 @@ export function App() {
       </main>
       {searchOpen && <SearchPanel />}
       <Dialogs />
+      <RecordingPreview />
       {dragging && <div className="drop-hint">Drop .one files to import them as sections</div>}
       <Toast />
     </div>

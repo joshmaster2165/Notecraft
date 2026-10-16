@@ -1,6 +1,6 @@
 [package]
 name = "notecraft-cli"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "Command-line and MCP access to a Notecraft library, for scripts and AI agents"
 repository = "https://github.com/joshmaster2165/Notecraft"

@@ -1,7 +1,7 @@
 # Rust workspace: the .one parser and the Notecraft desktop app, core library and CLI.
 [workspace]
 resolver = "2"
-members = ["onenote-re/parser-rs", "notecraft/crates/core", "notecraft/crates/cli", "notecraft/src-tauri"]
+members = ["onenote-re/parser-rs", "onenote-re/writer-rs", "notecraft/crates/core", "notecraft/crates/cli", "notecraft/crates/engine", "notecraft/src-tauri"]
 
 [workspace.package]
 edition = "2021"
@@ -12,3 +12,19 @@ lto = true
 codegen-units = 1
 opt-level = "s"
 strip = true
+
+# Section locks run PBKDF2 600,000 times: keep the crypto fast in dev builds too.
+[profile.dev.package.sha2]
+opt-level = 3
+[profile.dev.package.hmac]
+opt-level = 3
+[profile.dev.package.pbkdf2]
+opt-level = 3
+[profile.dev.package.aes]
+opt-level = 3
+[profile.dev.package.aes-gcm]
+opt-level = 3
+[profile.dev.package.ghash]
+opt-level = 3
+[profile.dev.package.polyval]
+opt-level = 3

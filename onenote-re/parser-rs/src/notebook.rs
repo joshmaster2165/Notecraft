@@ -17,7 +17,7 @@ use serde::{Serialize, Serializer};
 
 use crate::ink::{
     decode_bounding_box, decode_ink_dimensions, decode_ink_path, point_bounds, stroke_points,
-    Bounds, InkBlock, InkStroke, HIMETRIC_PT,
+    Bounds, InkBlock, InkShapeInfo, InkStroke, HIMETRIC_PT,
 };
 use crate::js::{self, round2 as round};
 use crate::onestore::{
@@ -94,12 +94,51 @@ pub struct TextStyle {
     pub subscript: Option<bool>,
     #[serde(skip_serializing_if = "is_none")]
     pub hidden: Option<bool>,
+    /// MathFormatting: the run is part of an equation (RichEdit's CFE_MATH).
     #[serde(skip_serializing_if = "is_none")]
     pub math: Option<bool>,
+    /// MathOrdinary / MathNoBuildup: RichEdit's CFE_MATHORDINARY / CFE_MATHNOBUILDUP.
+    #[serde(skip_serializing_if = "is_none")]
+    pub math_ordinary: Option<bool>,
+    #[serde(skip_serializing_if = "is_none")]
+    pub math_no_buildup: Option<bool>,
+    /// The math object this run's U+FDD0 starts (MathData_*; file-format.md §15.4).
+    #[serde(skip_serializing_if = "is_none")]
+    pub math_object: Option<MathObject>,
     #[serde(skip_serializing_if = "is_none")]
     pub language_id: Option<u32>,
     #[serde(skip_serializing_if = "is_none")]
     pub style_id: Option<String>,
+}
+
+/// One math object (fraction, radical, n-ary, script, brackets…) in equation
+/// text. Its text is U+FDD0, the arguments separated by U+FDEE, then U+FDEF;
+/// the MathData_* properties sit on the U+FDD0 run's formatting. The field
+/// names follow ITextRange2::GetInlineObject, whose parameters they match.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MathObject {
+    /// MathData_Type: RichEdit's inline object type (tom.h OBJECTTYPE).
+    pub r#type: u32,
+    /// MathData_cArg: number of arguments.
+    #[serde(skip_serializing_if = "is_none")]
+    pub args: Option<u32>,
+    /// MathData_Char / Char1 / Char2: UTF-16 code units.
+    #[serde(skip_serializing_if = "is_none")]
+    pub char: Option<u32>,
+    #[serde(skip_serializing_if = "is_none")]
+    pub char1: Option<u32>,
+    #[serde(skip_serializing_if = "is_none")]
+    pub char2: Option<u32>,
+    #[serde(skip_serializing_if = "is_none")]
+    pub align: Option<u32>,
+    /// MathData_cCol: matrix columns.
+    #[serde(skip_serializing_if = "is_none")]
+    pub columns: Option<u32>,
+    #[serde(skip_serializing_if = "is_none")]
+    pub tex_style: Option<u32>,
+    #[serde(skip_serializing_if = "is_none")]
+    pub font_align: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -191,8 +230,64 @@ pub struct ImageBlock {
     /// UnverifiedHash (20 bytes, hex): the key the cache resolver matches against SHA-1 of cached files.
     #[serde(skip_serializing_if = "is_none")]
     pub unverified_hash: Option<String>,
+    /// Picture › Crop (file-format.md §15.1).
+    #[serde(skip_serializing_if = "is_none")]
+    pub crop: Option<ImageCrop>,
+    /// One page of a File Printout (file-format.md §15.2).
+    #[serde(skip_serializing_if = "is_none")]
+    pub printout: Option<PrintoutInfo>,
+    /// Embedded web content (IFrame*: an online video, for example).
+    #[serde(skip_serializing_if = "is_none")]
+    pub embed: Option<EmbedInfo>,
     pub asset_status: AssetStatus,
     pub asset: Option<AssetInfo>,
+}
+
+/// The kept rectangle as percentages (0–100) of the original picture. OneNote
+/// stores fractions (0–1) as float32; the converter multiplies by 100.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageCrop {
+    pub top_left_x_percentage: f64,
+    pub top_left_y_percentage: f64,
+    pub width_percentage: f64,
+    pub height_percentage: f64,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PrintoutInfo {
+    /// OriginalPageNumber (else DisplayedPageNumber): the 1-based page of the printed file.
+    #[serde(skip_serializing_if = "is_none")]
+    pub page: Option<u32>,
+    /// IsPartOfSplitPrintout: a long printout continued on another OneNote page.
+    #[serde(skip_serializing_if = "is_none")]
+    pub split_part: Option<bool>,
+    /// PrintoutOutOfDate: the attachment changed after this picture was made.
+    #[serde(skip_serializing_if = "is_none")]
+    pub out_of_date: Option<bool>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmbedInfo {
+    #[serde(skip_serializing_if = "is_none")]
+    pub url: Option<String>,
+    /// IFrameMediaType (not decoded).
+    #[serde(skip_serializing_if = "is_none")]
+    pub media_type: Option<u32>,
+    #[serde(skip_serializing_if = "is_none")]
+    pub title: Option<String>,
+}
+
+/// A recording made in OneNote (Insert › Audio / Video): IRecordMedia and
+/// AudioRecordingDuration, undecoded.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+pub struct Recording {
+    #[serde(skip_serializing_if = "is_none")]
+    pub media: Option<u32>,
+    #[serde(skip_serializing_if = "is_none")]
+    pub duration: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -206,6 +301,12 @@ pub struct EmbeddedFileBlock {
     pub filename: Option<String>,
     #[serde(skip_serializing_if = "is_none")]
     pub source_path: Option<String>,
+    /// A recording made in OneNote (Insert › Audio / Video).
+    #[serde(skip_serializing_if = "is_none")]
+    pub recording: Option<Recording>,
+    /// PrintoutOutOfDate: the file changed after its printout pictures were made.
+    #[serde(skip_serializing_if = "is_none")]
+    pub printout_out_of_date: Option<bool>,
     pub asset_status: AssetStatus,
     pub asset: Option<AssetInfo>,
 }
@@ -496,6 +597,10 @@ pub struct Source {
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Section {
     pub id: Option<String>,
+    /// Password protected in OneNote: encrypted object spaces
+    /// (ObjectDataEncryptionKeyV2FNDX) or IsEncrypted on the section. Their
+    /// pages are not decrypted or converted (file-format.md §15.5).
+    pub encrypted: Option<bool>,
     pub name: Option<String>,
     pub entity_guid: Option<String>,
     pub created_at: Option<String>,
@@ -508,12 +613,16 @@ pub struct Section {
 
 impl Serialize for Section {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        let mut st = s.serialize_struct("Section", 6)?;
+        let mut st = s.serialize_struct("Section", 7)?;
         let opt = |st: &mut S::SerializeStruct, k: &'static str, v: &Option<String>| match v {
             Some(v) => st.serialize_field(k, v),
             None => st.skip_field(k),
         };
         st.serialize_field("id", &self.id)?;
+        match self.encrypted {
+            Some(e) => st.serialize_field("encrypted", &e)?,
+            None => st.skip_field("encrypted")?,
+        }
         st.serialize_field("pages", &self.pages)?;
         if !self.name_last {
             opt(&mut st, "name", &self.name)?;
@@ -716,6 +825,7 @@ fn file_time(b: Option<&[u8]>) -> Option<String> {
 pub fn sniff_media_type(b: &[u8], extension: Option<&str>) -> String {
     let starts = |sig: &[u8]| b.len() >= sig.len() && &b[..sig.len()] == sig;
     let at = |i: usize| b.get(i).copied();
+    let tag = |i: usize, s: &str| b.get(i..i + s.len()) == Some(s.as_bytes());
     let t = if starts(&[0x89, 0x50, 0x4e, 0x47]) {
         "image/png"
     } else if starts(&[0xff, 0xd8, 0xff]) {
@@ -736,12 +846,176 @@ pub fn sniff_media_type(b: &[u8], extension: Option<&str>) -> String {
         "application/zip"
     } else if starts(&[0x49, 0x49, 0x2a, 0x00]) || starts(&[0x4d, 0x4d, 0x00, 0x2a]) {
         "image/tiff"
+    // Audio and video: recordings and attached media (file-format.md §15.6).
+    } else if tag(4, "ftyp") {
+        if tag(8, "M4A ") || tag(8, "M4B ") {
+            "audio/mp4"
+        } else if tag(8, "qt  ") {
+            "video/quicktime"
+        } else if tag(8, "3gp") || tag(8, "3g2") {
+            "video/3gpp"
+        } else {
+            "video/mp4"
+        }
+    } else if starts(b"RIFF") && tag(8, "WAVE") {
+        "audio/wav"
+    } else if starts(b"RIFF") && tag(8, "AVI ") {
+        "video/x-msvideo"
+    } else if starts(b"ID3") {
+        "audio/mpeg"
+    } else if starts(b"OggS") {
+        "audio/ogg"
+    } else if starts(b"fLaC") {
+        "audio/flac"
+    } else if starts(b"caff") {
+        "audio/x-caf"
+    } else if starts(b"#!AMR") {
+        "audio/amr"
+    } else if starts(&[0x1a, 0x45, 0xdf, 0xa3]) {
+        "video/webm"
+    } else if starts(&[0x30, 0x26, 0xb2, 0x75, 0x8e, 0x66, 0xcf, 0x11]) {
+        let ext = extension.map(|e| e.strip_prefix('.').unwrap_or(e).to_lowercase());
+        match ext.as_deref() {
+            Some("wma") => "audio/x-ms-wma",
+            Some("wmv") => "video/x-ms-wmv",
+            _ => "video/x-ms-asf",
+        }
+    } else if at(0) == Some(0xff) && at(1).unwrap_or(0) & 0xf6 == 0xf0 {
+        "audio/aac"
+    } else if at(0) == Some(0xff) && at(1).unwrap_or(0) & 0xe0 == 0xe0 {
+        "audio/mpeg"
     } else if let Some(ext) = extension.filter(|e| !e.is_empty()) {
         return format!("application/x-{}", ext.strip_prefix('.').unwrap_or(ext));
     } else {
         "application/octet-stream"
     };
     t.to_string()
+}
+
+// --- crop, printouts, Ink to Shape, equations, embeds (file-format.md §15) -------
+
+// [X, Y, width, height]. The 0x12xx family is the one OneNote for Mac reads and
+// writes; the Deprecated_ family is read when the current one is absent.
+const CROP_CURRENT: [u32; 4] = [
+    prop::IMAGE_CROPPED_TOP_LEFT_X_PERCENTAGE,
+    prop::IMAGE_CROPPED_TOP_LEFT_Y_PERCENTAGE,
+    prop::IMAGE_CROPPED_WIDTH_PERCENTAGE,
+    prop::IMAGE_CROPPED_HEIGHT_PERCENTAGE,
+];
+const CROP_DEPRECATED: [u32; 4] = [
+    prop::DEPRECATED_IMAGE_CROPPED_TOP_LEFT_X_PERCENTAGE,
+    prop::DEPRECATED_IMAGE_CROPPED_TOP_LEFT_Y_PERCENTAGE,
+    prop::DEPRECATED_IMAGE_CROPPED_WIDTH_PERCENTAGE,
+    prop::DEPRECATED_IMAGE_CROPPED_HEIGHT_PERCENTAGE,
+];
+
+fn clamp100(v: f64) -> f64 {
+    js::min(100.0, js::max(0.0, v))
+}
+
+/// The crop rectangle in percent of the original picture. OneNote stores
+/// float32 fractions with an uncropped default of {0, 0, 1, 1}; a rectangle
+/// with any value above 1 is taken as already in percent. No crop → None.
+fn image_crop(p: &Props) -> Option<ImageCrop> {
+    let ids = [CROP_CURRENT, CROP_DEPRECATED]
+        .into_iter()
+        .find(|set| set.iter().any(|&id| p.has(id)))?;
+    let v = ids.map(|id| p.f32(id));
+    if !v.iter().flatten().all(|n| n.is_finite()) {
+        return None;
+    }
+    let scale = if v.iter().flatten().any(|&n| n > 1.001) {
+        1.0
+    } else {
+        100.0
+    };
+    // A missing value keeps the uncropped default: left/top 0, width/height the whole picture.
+    let pct = |n: Option<f64>, full: f64| n.map_or(full, |n| clamp100(n * scale));
+    let x = round(pct(v[0], 0.0));
+    let y = round(pct(v[1], 0.0));
+    let width = round(js::min(pct(v[2], 100.0), 100.0 - x));
+    let height = round(js::min(pct(v[3], 100.0), 100.0 - y));
+    if !(width > 0.0 && height > 0.0) || (x == 0.0 && y == 0.0 && width >= 100.0 && height >= 100.0)
+    {
+        return None;
+    }
+    Some(ImageCrop {
+        top_left_x_percentage: x,
+        top_left_y_percentage: y,
+        width_percentage: width,
+        height_percentage: height,
+    })
+}
+
+fn printout_info(p: &Props) -> Option<PrintoutInfo> {
+    let is_page = p.bool(prop::IS_PRINTOUT_PAGE) == Some(true);
+    let split = p.bool(prop::IS_PART_OF_SPLIT_PRINTOUT) == Some(true);
+    if !is_page && !split {
+        return None;
+    }
+    Some(PrintoutInfo {
+        page: p
+            .u32(prop::ORIGINAL_PAGE_NUMBER)
+            .filter(|&n| n != 0)
+            .or_else(|| p.u32(prop::DISPLAYED_PAGE_NUMBER).filter(|&n| n != 0)),
+        split_part: split.then_some(true),
+        out_of_date: p.bool(prop::PRINTOUT_OUT_OF_DATE).filter(|&b| b),
+    })
+}
+
+fn embed_info(p: &Props) -> Option<EmbedInfo> {
+    let url = p.str(prop::IFRAME_ORIGIN_URL);
+    let media_type = p.u32(prop::IFRAME_MEDIA_TYPE);
+    let title = p.str(prop::IFRAME_CONTENT_TITLE);
+    if url.is_none() && media_type.is_none() && title.is_none() {
+        return None;
+    }
+    Some(EmbedInfo {
+        url,
+        media_type,
+        title,
+    })
+}
+
+/// InkShape2DInfo / InkLineShapeInfo on an ink object, undecoded.
+fn ink_shape(p: &Props) -> Option<InkShapeInfo> {
+    [
+        (
+            "shape2d",
+            prop::INK_SHAPE_2D_INFO,
+            prop::INK_SHAPE_2D_INFO_MODIFIED_PROXY,
+        ),
+        (
+            "line",
+            prop::INK_LINE_SHAPE_INFO,
+            prop::INK_LINE_SHAPE_INFO_MODIFIED_PROXY,
+        ),
+    ]
+    .into_iter()
+    .find_map(|(source, info, proxy)| {
+        let b = p.bytes(info)?;
+        Some(InkShapeInfo {
+            source,
+            byte_length: b.len(),
+            data: hex(&b[..b.len().min(256)]),
+            modified_proxy: p.u32(proxy),
+        })
+    })
+}
+
+/// MathData_* on a run's formatting: present when MathData_Type is.
+fn math_object(p: &Props) -> Option<MathObject> {
+    Some(MathObject {
+        r#type: p.u32(prop::MATH_DATA_TYPE)?,
+        args: p.u32(prop::MATH_DATA_C_ARG),
+        char: p.u32(prop::MATH_DATA_CHAR),
+        char1: p.u32(prop::MATH_DATA_CHAR1),
+        char2: p.u32(prop::MATH_DATA_CHAR2),
+        align: p.u32(prop::MATH_DATA_ALIGN),
+        columns: p.u32(prop::MATH_DATA_C_COL),
+        tex_style: p.u32(prop::MATH_DATA_TEX_STYLE),
+        font_align: p.u32(prop::MATH_DATA_FONT_ALIGN),
+    })
 }
 
 // --- converter -----------------------------------------------------------------
@@ -804,10 +1078,19 @@ impl<'s, 'a, 'o> NotebookConverter<'s, 'a, 'o> {
             },
             diagnostics: Diagnostics::default(),
         };
+        // Password-protected sections (file-format.md §15.5): detected, never decrypted.
         for sp in s.object_spaces.values() {
             if sp.encrypted {
                 out.diagnostics.encrypted_object_spaces.push(sp.gosid.key());
             }
+        }
+        let n_encrypted = out.diagnostics.encrypted_object_spaces.len();
+        if n_encrypted > 0 {
+            out.section.encrypted = Some(true);
+            s.warn(format!(
+                "password-protected section: {n_encrypted} of {} object spaces are encrypted (ObjectDataEncryptionKeyV2FNDX) and were not converted",
+                s.object_spaces.len()
+            ));
         }
         if self.opts.resolve_file_data.is_some() {
             self.lookups = Some(FileDataLookups::default());
@@ -827,6 +1110,10 @@ impl<'s, 'a, 'o> NotebookConverter<'s, 'a, 'o> {
             s.warn("no root object space".into());
             return;
         };
+        // The section node itself is encrypted: nothing below it can be read.
+        if root.encrypted {
+            return;
+        }
         let rev = s.current_revision(root, root_role::DEFAULT_CONTENT, None);
         let section_node = rev.and_then(|rev| {
             let oid = s.root_object(root, rev, root_role::DEFAULT_CONTENT)?;
@@ -849,21 +1136,40 @@ impl<'s, 'a, 'o> NotebookConverter<'s, 'a, 'o> {
             depth: 0,
         };
         let sp = self.props(Some(section_node));
-        section.entity_guid = sp.str(prop::NOTEBOOK_MANAGEMENT_ENTITY_GUID);
-        section.created_at = file_time(sp.bytes(prop::TOPOLOGY_CREATION_TIME_STAMP));
-        section.color = color_ref(sp.u32(prop::NOTEBOOK_COLOR));
-
-        // Section metadata root, when present, carries the display name.
+        // Section metadata root, when present, carries the display name and the color.
         let meta_rev = s
             .current_revision(root, root_role::METADATA, None)
             .unwrap_or(rev);
         let meta = s
             .root_object(root, meta_rev, root_role::METADATA)
             .and_then(|oid| s.find_object(meta_rev, &oid, Some(root)));
-        let display_name = meta.and_then(|m| self.props(Some(m)).str(prop::SECTION_DISPLAY_NAME));
+        let mp = self.props(meta);
+
+        section.entity_guid = sp.str(prop::NOTEBOOK_MANAGEMENT_ENTITY_GUID);
+        section.created_at = file_time(sp.bytes(prop::TOPOLOGY_CREATION_TIME_STAMP));
+        // NotebookColor is on SectionMetaData in OneNote's files ([MS-ONE]); the
+        // section node and the deprecated property are fallbacks.
+        section.color = color_ref(mp.u32(prop::NOTEBOOK_COLOR))
+            .or_else(|| color_ref(sp.u32(prop::NOTEBOOK_COLOR)))
+            .or_else(|| color_ref(mp.u32(prop::DEPRECATED_SECTION_COLOR)))
+            .or_else(|| color_ref(sp.u32(prop::DEPRECATED_SECTION_COLOR)));
+        let display_name = meta.and_then(|_| mp.str(prop::SECTION_DISPLAY_NAME));
         if let Some(name) = display_name.filter(|n| !n.is_empty()) {
             section.name_last = section.name.is_none();
             section.name = Some(name);
+        }
+        // OneNote's own flags for protected content, on the section or its metadata.
+        let flag = |id: u32| sp.bool(id) == Some(true) || mp.bool(id) == Some(true);
+        if flag(prop::IS_ENCRYPTED) || flag(prop::IS_SOME_ENCRYPTED_CONTENT_UNAVAILABLE) {
+            section.encrypted = Some(true);
+            s.warn(format!(
+                "password-protected section: the section is marked {}",
+                if flag(prop::IS_ENCRYPTED) {
+                    "IsEncrypted"
+                } else {
+                    "IsSomeEncryptedContentUnavailable"
+                }
+            ));
         }
 
         for series_oid in sp.oids(prop::ELEMENT_CHILD_NODES) {
@@ -993,10 +1299,12 @@ impl<'s, 'a, 'o> NotebookConverter<'s, 'a, 'o> {
                 }
             }
         }
+        // No cached title: the title outline's text, never OneNote's date/time line under it.
         if page.title.is_empty() {
             let parts: Vec<String> = page
                 .title_blocks
                 .iter()
+                .filter(|b| !matches!(b.role, Some("titleDate" | "titleTime")))
                 .map(|b| plain_text(&b.children))
                 .collect();
             page.title = js::trim(&parts.join(" ")).to_string();
@@ -1206,10 +1514,12 @@ impl<'s, 'a, 'o> NotebookConverter<'s, 'a, 'o> {
                     ]);
                 }
             }
+            // Ink to Shape info on the stroke wins; else the data node's or container's applies.
+            let shape = ink_shape(&dp).or_else(|| ink_shape(&p));
             for so in dp.oids(prop::INK_STROKES) {
                 if let Some(stroke) = self
                     .resolve(ctx, &so)
-                    .and_then(|sd| self.convert_stroke(ctx, sd, sx, sy, x, y))
+                    .and_then(|sd| self.convert_stroke(ctx, sd, sx, sy, x, y, shape.as_ref()))
                 {
                     strokes.push(stroke);
                 }
@@ -1224,6 +1534,7 @@ impl<'s, 'a, 'o> NotebookConverter<'s, 'a, 'o> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn convert_stroke(
         &self,
         ctx: Ctx<'s>,
@@ -1232,6 +1543,7 @@ impl<'s, 'a, 'o> NotebookConverter<'s, 'a, 'o> {
         sy: f64,
         x: f64,
         y: f64,
+        shape: Option<&InkShapeInfo>,
     ) -> Option<InkStroke> {
         let p = self.props(Some(decl));
         let path = p.bytes(prop::INK_PATH)?;
@@ -1272,6 +1584,7 @@ impl<'s, 'a, 'o> NotebookConverter<'s, 'a, 'o> {
                 Some(2) => Some("both"),
                 _ => None,
             },
+            shape: ink_shape(&p).or_else(|| shape.cloned()),
         })
     }
 
@@ -1469,6 +1782,9 @@ impl<'s, 'a, 'o> NotebookConverter<'s, 'a, 'o> {
             subscript: flag(prop::SUBSCRIPT),
             hidden: flag(prop::HIDDEN),
             math: flag(prop::MATH_FORMATTING),
+            math_ordinary: flag(prop::MATH_ORDINARY),
+            math_no_buildup: flag(prop::MATH_NO_BUILDUP),
+            math_object: math_object(p),
             language_id: p.u32(prop::LANGUAGE_ID),
             style_id: p.str(prop::PARAGRAPH_STYLE_ID),
         }
@@ -1656,6 +1972,9 @@ impl<'s, 'a, 'o> NotebookConverter<'s, 'a, 'o> {
         let ocr_text = p
             .str(prop::RICH_EDIT_TEXT_UNICODE)
             .filter(|s| !s.is_empty());
+        let crop = image_crop(&p);
+        let printout = printout_info(&p);
+        let embed = embed_info(&p);
         let (asset_status, asset) = self.file_asset(container, unverified_hash.as_deref());
         ImageBlock {
             r#type: "image",
@@ -1667,6 +1986,9 @@ impl<'s, 'a, 'o> NotebookConverter<'s, 'a, 'o> {
             is_background,
             ocr_text,
             unverified_hash,
+            crop,
+            printout,
+            embed,
             asset_status,
             asset,
         }
@@ -1684,12 +2006,19 @@ impl<'s, 'a, 'o> NotebookConverter<'s, 'a, 'o> {
             .filter(|b| b.len() == 20)
             .map(hex);
         let (asset_status, asset) = self.file_asset(container, hash.as_deref());
+        let recording = (p.has(prop::I_RECORD_MEDIA) || p.has(prop::AUDIO_RECORDING_DURATION))
+            .then(|| Recording {
+                media: p.u32(prop::I_RECORD_MEDIA),
+                duration: p.u32(prop::AUDIO_RECORDING_DURATION),
+            });
         EmbeddedFileBlock {
             r#type: "embeddedFile",
             id: decl.oid.key(),
             layout: self.layout(&p),
             filename: p.str(prop::EMBEDDED_FILE_NAME),
             source_path: p.str(prop::SOURCE_FILEPATH),
+            recording,
+            printout_out_of_date: p.bool(prop::PRINTOUT_OUT_OF_DATE).filter(|&b| b),
             asset_status,
             asset,
         }
@@ -1797,7 +2126,7 @@ pub fn plain_text(elements: &[OutlineElementBlock]) -> String {
 
 // --- generic property rendering (unknown blocks and raw dumps) -------------------
 
-const STRING_PROPS: [u32; 18] = [
+const STRING_PROPS: [u32; 21] = [
     prop::FONT,
     prop::RICH_EDIT_TEXT_UNICODE,
     prop::NUMBER_LIST_FORMAT,
@@ -1816,6 +2145,9 @@ const STRING_PROPS: [u32; 18] = [
     prop::NEXT_STYLE,
     prop::WZ_HYPERLINK_URL,
     prop::NOTEBOOK_MANAGEMENT_ENTITY_GUID,
+    prop::IFRAME_ORIGIN_URL,
+    prop::IFRAME_CONTENT_TITLE,
+    prop::AUDIO_RECORDING_FILENAME,
 ];
 
 pub fn describe_properties(set: Option<&PropertySet>) -> Described {
@@ -2006,5 +2338,160 @@ pub fn dump_object_graph<'s>(store: &'s OneStore) -> ObjectGraph<'s> {
         file_node_list_fragments: &store.fragments,
         object_spaces,
         warnings: store.warnings(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bytes_prop(id: u32, b: &'static [u8]) -> Property<'static> {
+        Property {
+            prid: id,
+            id,
+            ty: 0x7,
+            value: PropertyValue::Bytes(b),
+        }
+    }
+
+    fn bool_prop(id: u32, v: bool) -> Property<'static> {
+        Property {
+            prid: id,
+            id,
+            ty: 0x2,
+            value: PropertyValue::Bool(v),
+        }
+    }
+
+    fn f32_bytes(v: f32) -> &'static [u8] {
+        Box::leak(Box::new(v.to_le_bytes()))
+    }
+
+    fn crop_of(props: Vec<Property<'static>>) -> Option<ImageCrop> {
+        image_crop(&Props::of(&PropertySet { properties: props }))
+    }
+
+    #[test]
+    fn crop_fractions_become_percentages() {
+        // OneNote for Mac writes fractions of the original picture (file-format.md §15.1).
+        let crop = crop_of(vec![
+            bytes_prop(prop::IMAGE_CROPPED_TOP_LEFT_X_PERCENTAGE, f32_bytes(0.25)),
+            bytes_prop(prop::IMAGE_CROPPED_TOP_LEFT_Y_PERCENTAGE, f32_bytes(0.1)),
+            bytes_prop(prop::IMAGE_CROPPED_WIDTH_PERCENTAGE, f32_bytes(0.5)),
+            bytes_prop(prop::IMAGE_CROPPED_HEIGHT_PERCENTAGE, f32_bytes(0.75)),
+        ]);
+        assert_eq!(
+            crop,
+            Some(ImageCrop {
+                top_left_x_percentage: 25.0,
+                top_left_y_percentage: 10.0,
+                width_percentage: 50.0,
+                height_percentage: 75.0
+            })
+        );
+        // Missing values take the uncropped default {0, 0, 1, 1}; the full rectangle is no crop.
+        assert_eq!(
+            crop_of(vec![bytes_prop(
+                prop::IMAGE_CROPPED_WIDTH_PERCENTAGE,
+                f32_bytes(1.0)
+            )]),
+            None
+        );
+        let half = crop_of(vec![bytes_prop(
+            prop::IMAGE_CROPPED_WIDTH_PERCENTAGE,
+            f32_bytes(0.5),
+        )])
+        .unwrap();
+        assert_eq!(
+            (
+                half.top_left_x_percentage,
+                half.width_percentage,
+                half.height_percentage
+            ),
+            (0.0, 50.0, 100.0)
+        );
+        // The deprecated family, used only when the current one is absent; values above 1 are percentages.
+        let dep = crop_of(vec![
+            bytes_prop(
+                prop::DEPRECATED_IMAGE_CROPPED_TOP_LEFT_X_PERCENTAGE,
+                f32_bytes(80.0),
+            ),
+            bytes_prop(
+                prop::DEPRECATED_IMAGE_CROPPED_WIDTH_PERCENTAGE,
+                f32_bytes(40.0),
+            ),
+        ])
+        .unwrap();
+        assert_eq!(
+            (
+                dep.top_left_x_percentage,
+                dep.width_percentage,
+                dep.height_percentage
+            ),
+            (80.0, 20.0, 100.0)
+        );
+        assert_eq!(
+            crop_of(vec![bytes_prop(
+                prop::IMAGE_CROPPED_WIDTH_PERCENTAGE,
+                f32_bytes(f32::NAN)
+            )]),
+            None
+        );
+    }
+
+    #[test]
+    fn printout_math_and_shape_properties() {
+        let set = PropertySet {
+            properties: vec![
+                bool_prop(prop::IS_PRINTOUT_PAGE, true),
+                bytes_prop(prop::ORIGINAL_PAGE_NUMBER, &[3, 0, 0, 0]),
+                bool_prop(prop::PRINTOUT_OUT_OF_DATE, true),
+                bytes_prop(prop::MATH_DATA_TYPE, &[16, 0, 0, 0]),
+                bytes_prop(prop::MATH_DATA_C_ARG, &[2, 0, 0, 0]),
+                bytes_prop(prop::MATH_DATA_CHAR, &[0x11, 0x22]),
+                bytes_prop(prop::INK_LINE_SHAPE_INFO, &[1, 2, 255]),
+                bytes_prop(prop::INK_LINE_SHAPE_INFO_MODIFIED_PROXY, &[9, 0, 0, 0]),
+            ],
+        };
+        let p = Props::of(&set);
+        assert_eq!(
+            printout_info(&p),
+            Some(PrintoutInfo {
+                page: Some(3),
+                split_part: None,
+                out_of_date: Some(true)
+            })
+        );
+        let m = math_object(&p).unwrap();
+        assert_eq!(
+            (m.r#type, m.args, m.char, m.char1),
+            (16, Some(2), Some(0x2211), None)
+        );
+        let s = ink_shape(&p).unwrap();
+        assert_eq!(
+            (s.source, s.byte_length, s.data.as_str(), s.modified_proxy),
+            ("line", 3, "0102ff", Some(9))
+        );
+        // MathData_Align alone (as on every run style OneNote for Windows writes) is not a math object.
+        let align_only = PropertySet {
+            properties: vec![bytes_prop(prop::MATH_DATA_ALIGN, &[0])],
+        };
+        assert_eq!(math_object(&Props::of(&align_only)), None);
+    }
+
+    #[test]
+    fn sniffs_audio_and_video() {
+        let ftyp = |brand: &[u8]| [&[0, 0, 0, 0x20][..], b"ftyp", brand].concat();
+        assert_eq!(sniff_media_type(&ftyp(b"M4A "), None), "audio/mp4");
+        assert_eq!(sniff_media_type(&ftyp(b"isom"), None), "video/mp4");
+        assert_eq!(sniff_media_type(&ftyp(b"qt  "), None), "video/quicktime");
+        assert_eq!(sniff_media_type(b"RIFF\0\0\0\0WAVEfmt ", None), "audio/wav");
+        assert_eq!(sniff_media_type(b"ID3\x04", None), "audio/mpeg");
+        assert_eq!(sniff_media_type(&[0xff, 0xfb, 0x90], None), "audio/mpeg");
+        assert_eq!(sniff_media_type(&[0xff, 0xf1, 0x50], None), "audio/aac");
+        let asf = [0x30, 0x26, 0xb2, 0x75, 0x8e, 0x66, 0xcf, 0x11];
+        assert_eq!(sniff_media_type(&asf, Some(".WMA")), "audio/x-ms-wma");
+        assert_eq!(sniff_media_type(&asf, None), "video/x-ms-asf");
+        assert_eq!(sniff_media_type(&[0xff, 0xd8, 0xff], None), "image/jpeg");
     }
 }

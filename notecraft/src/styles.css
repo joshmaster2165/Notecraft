@@ -2194,3 +2194,200 @@ kbd {
   margin-left: -16px;
   color: var(--muted);
 }
+
+/* ---- equations, crop, printouts ------------------------------------------------------- */
+
+.oe-math {
+  padding: 4px 0;
+}
+.math-view {
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  padding: 4px 8px;
+  cursor: text;
+  color: var(--ink);
+  font: 16px "Cambria Math", "STIX Two Math", "Latin Modern Math", serif;
+}
+.math-view:hover {
+  border-color: var(--line);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+.math-view math {
+  font-size: 1.15em;
+}
+.math-input {
+  width: min(520px, 100%);
+  font: 14px var(--font-mono);
+  padding: 6px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+}
+.crop-layer {
+  position: absolute;
+  z-index: 20;
+  box-shadow: 0 0 0 9999px rgba(10, 14, 20, 0.35);
+}
+.crop-layer > img {
+  display: block;
+  opacity: 0.45;
+}
+.crop-box {
+  position: absolute;
+  outline: 2px solid var(--accent);
+  box-shadow: 0 0 0 1px #fff inset;
+  background: transparent;
+  overflow: visible;
+}
+.crop-box::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  backdrop-filter: brightness(2.2);
+}
+.crop-handle {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px;
+  background: #fff;
+  border: 2px solid var(--accent);
+  border-radius: 3px;
+}
+.crop-n { top: 0; left: 50%; cursor: ns-resize; }
+.crop-s { top: 100%; left: 50%; cursor: ns-resize; }
+.crop-e { top: 50%; left: 100%; cursor: ew-resize; }
+.crop-w { top: 50%; left: 0; cursor: ew-resize; }
+.crop-nw { top: 0; left: 0; cursor: nwse-resize; }
+.crop-se { top: 100%; left: 100%; cursor: nwse-resize; }
+.crop-ne { top: 0; left: 100%; cursor: nesw-resize; }
+.crop-sw { top: 100%; left: 0; cursor: nesw-resize; }
+.crop-actions {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  display: flex;
+  gap: 6px;
+}
+
+/* ---- password-protected sections ------------------------------------------------------ */
+
+.workspace-body > .locked-section {
+  flex: 1;
+  min-width: 0;
+}
+.locked-section {
+  display: grid;
+  place-items: center;
+  background: var(--desk);
+  padding: 24px;
+}
+.locked-card {
+  width: min(380px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding: 26px 24px 22px;
+  border-radius: 12px;
+  background: var(--paper);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  text-align: center;
+}
+.locked-card h2 {
+  margin: 0;
+  font: 600 16px/1.35 var(--font-ui);
+}
+.locked-card .dialog-note {
+  margin: 0;
+}
+.locked-icon {
+  align-self: center;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.locked-card input {
+  font: 14px var(--font-ui);
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--text);
+  text-align: center;
+}
+.locked-card input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+.lock-hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+  font-style: italic;
+}
+.lock-error {
+  margin: 0;
+  font-size: 13px;
+  color: var(--danger);
+}
+.lock-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: min(380px, 80vw);
+}
+.lock-form input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+.pagelist-locked {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 16px 14px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.section-lock {
+  display: inline-grid;
+  place-items: center;
+}
+
+/* ---- video recording preview ----------------------------------------------------------- */
+
+.rec-preview {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 60;
+  width: 280px;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #0d1117;
+  box-shadow: var(--shadow);
+}
+.rec-preview video {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  transform: scaleX(-1);
+  background: #000;
+}
+.rec-preview-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  color: #f1f3f6;
+  font-size: 13px;
+}
+.rec-preview-bar .btn {
+  margin-left: auto;
+}

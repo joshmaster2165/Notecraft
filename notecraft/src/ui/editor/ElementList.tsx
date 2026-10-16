@@ -6,6 +6,7 @@ import { listMarkers } from "../../model/lists.ts";
 import { Paragraph, type CellNav } from "./Paragraph.tsx";
 import { TableView } from "./TableView.tsx";
 import { FileChip, InlineImage } from "./media.tsx";
+import { MathView } from "./MathView.tsx";
 
 interface Props {
   elements: Element[];
@@ -39,6 +40,7 @@ export const ElementList = memo(function ElementList({ elements, listRef, cellNa
         if (el.kind === "table" && !("tableId" in listRef)) return <TableView key={el.id} table={el} listRef={listRef} />;
         if (el.kind === "image") return <InlineImage key={el.id} el={el} listRef={listRef} />;
         if (el.kind === "file") return <FileChip key={el.id} el={el} listRef={listRef} />;
+        if (el.kind === "math") return <MathView key={el.id} el={el} listRef={listRef} />;
         return null;
       })}
     </>

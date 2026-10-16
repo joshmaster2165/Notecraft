@@ -249,6 +249,15 @@ Details worth knowing **[files]**:
   MSONFC code (0 = decimal, 4 = lower letter, …).
 - **Image nodes** carry `RichEditTextUnicode`, which holds the text OneNote
   recognized in the picture. It is exposed as `ocrText`.
+- **Page titles** come from `CachedTitleString` (page metadata, then the page
+  node). Without one, the parser uses the text of the title area's outlines
+  except the `IsTitleDate`/`IsTitleTime` ones: OneNote's date and time line is
+  never a title. In the backups, 10 of 209 pages have no title; the earlier
+  fallback had titled all 10 with their date line.
+- **Section color** is `NotebookColor` (0x14001CBE, COLORREF) on the section's
+  metadata root (`SectionMetaData`, 0x20031). It is there in all 14 backups
+  and on no section node **[files]**. The parser falls back to the section
+  node, then to `Deprecated_SectionColor` (0x140034CF, name from §11.6).
 
 ## 9. Function map
 
@@ -276,19 +285,27 @@ Details worth knowing **[files]**:
   synthetic data, not yet by real files. `--raw` dumps any file's object graph.
 - **Not decoded:**
   - Password-protected sections (`ObjectDataEncryptionKeyV2FNDX`). These are
-    detected and reported.
+    detected and flagged, never decrypted (§15.5).
   - Handwriting embedded in text runs (`TextRunDataObject` → InkDataNode) and
     OneNote's handwriting recognition (`RecognizedText*`, 0x20054–57).
-  - Several image properties: `TextContentMetadata` (0x1D61), `EncryptedHash`
-    (0x1DFB, a Windows DPAPI blob) and `OriginalPageNumber` (0x1DF9). Only
-    `UnverifiedHash` (0x1DFC) is used (§11.5). Names come from §11.6; the values
-    are not interpreted.
+  - Several image properties: `TextContentMetadata` (0x1D61) and `EncryptedHash`
+    (0x1DFB, a Windows DPAPI blob). `UnverifiedHash` (0x1DFC) is used (§11.5),
+    and `OriginalPageNumber` (0x1DF9) is a printout's page number (§15.2).
+  - The geometry blobs of Ink to Shape (§15.3).
 - **Note tags sit on the text node in Mac files.** [MS-ONE] puts
   `NoteTagStates` (0x40003489) on the `OutlineElementNode`; the Mac backups put
   it on the paragraph's `RichTextOENode` (0x6000E) instead **[files]**. The
   parser reads both. Each state points at a `NoteTagSharedDefinitionContainer`
-  (0x120043) with the label, shape and colors; a present `ActionItemType`
-  makes the tag checkable, and bit 0 of `ActionItemStatus` means done.
+  (0x120043) with the label, shape and colors. Bit 0 of `ActionItemStatus`
+  means done.
+- **Which tags are checkable.** `NoteTagShape` decides, not `ActionItemType`.
+  Every definition in the backups has an `ActionItemType`, all 40 of them,
+  checkable or not **[files]**. Check-box shapes are 1–12, 28, 30, 32, 48, 50,
+  52, 69, 71, 73 and 89–99 ([MS-ONE] §2.3.86, the set `writer-rs` writes). In
+  the backups, tags of shape 3 (To Do) and 94 are ticked and unticked
+  independently **[files]**. A tag that cannot be checked is stored as
+  completed when it is created ([MS-ONE] §2.1.9). Notecraft falls back to
+  "has an `ActionItemType`" only for a definition with no shape.
 
 ---
 
@@ -609,3 +626,309 @@ Nothing marks an entry as a section or a group; that is decided on disk
 `FolderChildFilename`. Later entries with the same name override earlier
 ones; entries are then sorted by ordering id. The root's color is the
 notebook's; a section's own `.one` color wins over its TOC entry's.
+
+---
+
+## 15. Crop, printouts, Ink to Shape, equations, encryption and media
+
+These properties come from the property-name table (§11.6). Each table
+entry's second word gives the value type; the low byte reads **[binary]**:
+
+| Low byte | Type | Known example |
+|---|---|---|
+| 0x02 | bool | `Bold`-style flags |
+| 0x22, 0x26 | 32-bit integer | `PageLevel`, `CreationTimeStamp`, `RowCount` |
+| 0x24 | 8-bit integer | `MathData_Align` |
+| 0x25 | 16-bit value | `MathData_Char` |
+| 0x28 | float32 | `PictureWidth`, `PictureHeight`, `InkWidth` |
+| 0x07 | byte blob | `UnverifiedHash`, `InkShape2DInfo` |
+| 0x09 | ObjectID array | `AudioRecordingOids` |
+
+The third word is a group: 0x8000 on the math properties, 0x10 on the
+ink-shape properties, 0 on most others. Code references below were found by
+scanning `__text` for `adrp`/`add` pairs that address a table entry (and for
+`mov`/`movk` pairs that build the PropertyID), then disassembling the hits.
+
+**Validation, real data [files].** The 14 backups (§1) and the cache (§11)
+contain none of these features. The only properties of this section that
+occur are `MathFormatting`, `MathOrdinary`, `MathNoBuildup` (all false) and
+`MathData_Align` (0), on 1,634 of the 2,279 `ParagraphStyleObject`s (1,758
+times each in the cache), and `OriginalPageNumber` (0) on 1,383 pictures.
+Everything else below is from the binary, the public spec, or inferred, and
+is exercised by synthetic files (`parser-rs/tests/synthetic.mjs`) and unit
+tests rather than real ones.
+
+### 15.1 Picture crop
+
+| Property | ID | Type |
+|---|---|---|
+| ImageCroppingActive | 0x080012F4 | bool |
+| ImageCroppedWidthPercentage | 0x140012F5 | float32 |
+| ImageCroppedHeightPercentage | 0x140012F6 | float32 |
+| ImageCroppedTopLeftXPercentage | 0x140012F7 | float32 |
+| ImageCroppedTopLeftYPercentage | 0x140012F8 | float32 |
+| Deprecated_ImageCroppedTopLeftXPercentage | 0x140035CA | float32 |
+| Deprecated_ImageCroppedTopLeftYPercentage | 0x140035CB | float32 |
+| Deprecated_ImageCroppingActive | 0x080035CC | bool |
+| Deprecated_ImageCroppedWidthPercentage | 0x14003620 | float32 |
+| Deprecated_ImageCroppedHeightPercentage | 0x14003621 | float32 |
+
+- **The 0x12xx family is the live one [binary].** It sits among application
+  settings in the ID space, but the picture code reads and writes it on the
+  picture node. The `Deprecated_` family has no code reference in 16.114.
+- **Fractions, not percentages [binary].** The reader (at 0x100844068)
+  starts from `{X, Y, W, H} = {0, 0, 1, 1}` (float32 constant at
+  0x101363EE0) and overwrites each value that is present, in that order. The
+  crop tool's writer (at 0x100E42F2C) stores
+  `(cropLeft − pictureLeft) / pictureWidth`, `(cropTop − pictureTop) / pictureHeight`,
+  `cropWidth / pictureWidth` and `cropHeight / pictureHeight`. The values are
+  fractions of the whole picture, despite the names.
+- **`ImageCroppingActive` is tool state [binary].** It is set to false when a
+  picture's view is created (0x100841F70) and when the crop tool ends
+  (0x100846760). It does not say whether a picture is cropped.
+- **Parser.** `image.crop = {topLeftXPercentage, topLeftYPercentage,
+  widthPercentage, heightPercentage}` is the fraction × 100, rounded to 0.01.
+  The current family wins when any of its four values is present; otherwise
+  the deprecated one is read. A missing value keeps the default. A rectangle
+  with any value above 1 is taken as already in percent, a guess that only
+  matters for the deprecated family, whose encoding is unconfirmed. A
+  non-finite value, an empty rectangle, or the whole picture gives no `crop`.
+- **Inferred:** `PictureWidth`/`PictureHeight` are the visible (cropped)
+  frame. Notecraft checks this against the cropped pixels: when the frame's
+  shape matches the whole picture better, it treats the frame as the whole
+  picture.
+- **Notecraft:** the uncropped picture goes to `ImageData.original`, the
+  cropped pixels (`cropImage`, the Rust engine) to `src`, and the rectangle to
+  `ImageData.crop`. If cropping fails, the picture stays whole with no crop.
+
+### 15.2 File printouts
+
+| Property | ID | Type | On |
+|---|---|---|---|
+| IsPrintoutPage | 0x08001D85 | bool | picture **[binary]** |
+| OriginalPageNumber | 0x14001DF9 | int32 | picture **[binary]** |
+| DisplayedPageNumber | 0x14003480 | int32 | picture **[binary]** |
+| IsPartOfSplitPrintout | 0x080034C6 | bool | not traced; read on pictures |
+| PrintoutOutOfDate | 0x08001E2F | bool | the attachment (inferred); read on both |
+
+- **Insert › File Printout [binary].** For page *i* (counted from 0), the PDF
+  printout code (0x10070C9A4–0x10070CA14) sets `OriginalPageNumber` and
+  `DisplayedPageNumber` to *i* + 1 and `IsPrintoutPage` to true on the new
+  picture. The picture view reads `IsPrintoutPage` when it is created
+  (0x100841F30). Ordinary pictures carry `OriginalPageNumber` 0 **[files]**.
+- `PrintoutOutOfDate` is read in the attachment (EmbeddedFileNode) view code
+  (0x1006F6294, next to the `EmbeddedFileName` and `EmbeddedFileContainer`
+  readers). `IsPartOfSplitPrintout` has a setter and a getter (0x100960F88,
+  0x100960FBC) whose object was not traced. The application settings
+  `LargePrintoutSplit` (0x0800129B) and `LargePrintoutDoNotSplit` (0x0800129C)
+  choose whether a long printout continues on new pages.
+- **No property links a picture to its attachment.** OneNote inserts the
+  attachment and then the pictures. The parser reports
+  `image.printout = {page?, splitPart?, outOfDate?}` and
+  `embeddedFile.printoutOutOfDate`. Notecraft links each picture to the
+  nearest attachment before it on the same OneNote page. A picture with no
+  attachment before it on its page (the rest of a split printout) continues
+  the previous printout. `ImageData.printout = {file, page, pages}`, where
+  `pages` is the larger of the picture count and the highest page number.
+  Out-of-date pictures are kept as OneNote showed them, with
+  "(out of date)" in their label.
+
+### 15.3 Ink to Shape
+
+| Property | ID | Type |
+|---|---|---|
+| InkShape2DInfo | 0x1C001DAA | blob |
+| InkShape2DInfoModifiedProxy | 0x14001DAB | int32 |
+| InkLineShapeInfo | 0x1C001DAC | blob |
+| InkLineShapeInfoModifiedProxy | 0x14001DAD | int32 |
+| Depricated_LastUsedInkShapeType | 0x14001DC3 | int32 (setting) |
+
+- **[binary]** The readers (0x1008A645C for 2-D shapes, 0x1008A6978 for
+  lines) fetch the blob as an object-valued property and hand it to
+  `IInkShape2DInfoData` / `IInkLineShapeInfoData` (RTTI names). It is a
+  serialized object. **Its layout is not decoded.** The Mac binary's
+  recognizer RTTI includes `CEmptyShapeRecognizer`, so the Mac app may only
+  display shapes converted elsewhere (inferred).
+- **Parser.** `stroke.shape = {source: "shape2d" | "line", byteLength, data,
+  modifiedProxy?}`, where `data` is the first 256 bytes in hex. A property on
+  the stroke wins; otherwise the stroke takes the one on its ink data node or
+  its container.
+- **Notecraft:** `InkStroke.shape = true` and `shapeKind` named with
+  `crates/engine/src/shapes.rs`'s kinds. The kind is classified from the
+  stroke's own points: OneNote replaces the ink with the clean outline, so
+  `points` stay as stored. The classes are line and arrow for open strokes or
+  `source: "line"`, and triangle, rectangle, diamond, polygon and ellipse for
+  closed ones.
+
+### 15.4 Equations
+
+| Property | ID | Type | Meaning |
+|---|---|---|---|
+| MathFormatting | 0x08003401 | bool | run is math (RichEdit `CFE_MATH`) |
+| MathOrdinary | 0x08003405 | bool | `CFE_MATHORDINARY` |
+| MathNoBuildup | 0x08003406 | bool | `CFE_MATHNOBUILDUP` |
+| MathData_Type | 0x1400344F | int32 | inline object type |
+| MathData_cArg | 0x14003450 | int32 | argument count |
+| MathData_cCol | 0x0C003451 | u8 | matrix columns |
+| MathData_Align | 0x0C003452 | u8 | alignment |
+| MathData_Char | 0x10003453 | u16 | object character (n-ary operator, accent, opening bracket) |
+| MathData_Char1 | 0x10003454 | u16 | second character (closing bracket) |
+| MathData_Char2 | 0x10003455 | u16 | third character (separator) |
+| MathData_TeXStyle | 0x0C003456 | u8 | |
+| MathData_FontAlign | 0x0C0034AB | u8 | |
+
+- **Character formatting [files].** These properties sit on the run-style
+  objects (`ParagraphStyleObject`, `TextRunFormatting`) next to `Bold` and
+  `Font`. OneNote for Windows writes `MathFormatting = false` and
+  `MathData_Align = 0` on most runs.
+- **Names [spec].** `MathData_Type`, `Align`, `Char`, `Char1`, `Char2`,
+  `cArg`, `TeXStyle` and `cCol` are the parameters of
+  `ITextRange2::GetInlineObject` (tom.h), and the three flags are RichEdit's
+  `CFE_MATH*` effects. OneNote stores RichEdit's math model.
+- **Structure characters [binary].** `MicrosoftRichEdit.framework` treats
+  U+FDD0 as the start of an inline object and U+FDEF as its end, when walking
+  forward and backward (0x59AA4–0x59AE0). It classifies U+FDD0–U+FDEF, with
+  U+FDEE as the argument separator (0x58BA0). OneNote's own text code scans
+  for U+FDD0 or U+FFFC as object starts (0x100164840).
+- **Type values [binary].** RichEdit's `__TEXT,__const` at 0x26BD2C holds one
+  UnicodeMath operator per object type, in tom.h `OBJECTTYPE` order from
+  `tomAccent` = 10: U+0302 accent (10), □ box (11), ▭ boxed formula (12),
+  ( brackets (13), ( brackets with separators (14), █ equation array (15),
+  / fraction (16), U+2061 function apply (17), ^ left sub/superscript (18),
+  ┬ lower limit (19), ■ matrix (20), ∫ n-ary (21), op char (22), ¯ overbar
+  (23), ⟡ phantom (24), √ radical (25), ⁄ slashed fraction (26), ¦ stack
+  (27), ⏟ stretch stack (28), _ subscript (29), _ sub/superscript (30),
+  ^ superscript (31), ▁ underbar (32), ┴ upper limit (33).
+- **Inferred, not verified against a file** (no equation in the corpus):
+  OneNote keeps the built-up form in `RichEditTextUnicode` as
+  U+FDD0 *arg* U+FDEE *arg* … U+FDEF, nested, and puts `MathData_*` on the
+  run holding the U+FDD0. Arguments follow OMML's order: numerator then
+  denominator; base then scripts; n-ary lower limit, upper limit, operand;
+  radical degree then radicand; left scripts sub, sup, then base.
+- **Parser.** Runs keep their text, structure characters included, with
+  `style.math`, `style.mathOrdinary`, `style.mathNoBuildup` and
+  `style.mathObject = {type, args?, char?, char1?, char2?, align?, columns?,
+  texStyle?, fontAlign?}`, present when `MathData_Type` is. Characters are
+  UTF-16 code units.
+- **Notecraft.** Each run of consecutive math runs is converted to UnicodeMath
+  (`buildDown` in `notecraft/src/model/importOne.ts`). A paragraph whose
+  other runs are blank becomes a `MathEl`. Text with inline equations stays a
+  paragraph, with each equation as one run of linear text in Cambria Math.
+  **Fallback:** an object whose `MathData_Type` is missing or not one of the
+  types above keeps its visible text, the arguments joined by spaces, and is
+  counted in `stats.equationsUndecoded`.
+
+### 15.5 Password-protected sections
+
+- **What marks them.**
+  - `ObjectDataEncryptionKeyV2FNDX` (0x07C) in an object space's revision
+    manifest list **[spec]**. The parser sets `ObjectSpace.encrypted` and
+    never decrypts the object data.
+  - `IsEncrypted` (0x08001DC6) and `IsSomeEncryptedContentUnavailable`
+    (0x08001DD1), both bool. Their names come from the table. Code refers to
+    `IsEncrypted` at 0x10009CDBC, four sites in 0x100773C84–0x1007740A4,
+    0x100796EFC, 0x100796F54 and 0x100D44004, and to the other at 0x10010CC54,
+    0x100199A60, 0x1001AD4F8, 0x10077493C and 0x100C46BDC. The objects that
+    carry them were not traced.
+  - The application settings `SectionEncrypted` (0x08001119),
+    `SectionUnencrypted` (0x0800111A), `DisableEncryptionWarning` (0x0800115D)
+    and `DoNotPublishEncryptedContent` (0x080011A3).
+  - `EncryptedHash` (0x1C001DFB) is unrelated: it is a picture's DPAPI blob
+    (§11.5).
+- **Before this section was added,** the converter skipped pages in encrypted
+  spaces and listed the spaces only in `diagnostics.encryptedObjectSpaces`. An
+  encrypted root space was parsed as if readable.
+- **Parser now.**
+  - `section.encrypted = true`, serialized right after `id`, when any object
+    space is encrypted or the section node or section metadata has
+    `IsEncrypted` or `IsSomeEncryptedContentUnavailable` set. Each cause adds
+    a `diagnostics.warnings` entry starting "password-protected section:".
+  - An encrypted root space stops the conversion before the section node is
+    read. Readable pages of a partly encrypted section are still converted.
+- **Product decision:** OneNote's encryption is not reversed.
+- **Notecraft:**
+  - The section is named "*name* (locked)". Its first page, "Password
+    protected in OneNote", says: "This section is password protected in
+    OneNote. Unlock it in OneNote and import it again." Readable pages follow.
+  - `ImportResult.passwordProtected` is set.
+  - `Section.locked` is not used: that is Notecraft's own AES-256-GCM lock
+    (`notecraft/crates/engine/src/lock.rs`) and needs a real sealed payload.
+- No encrypted sample exists on this machine. The detection is tested on
+  synthetic files only.
+
+### 15.6 Media: recordings, attachments and embeds
+
+| Property | ID | Type |
+|---|---|---|
+| IRecordMedia | 0x14001D24 | int32 |
+| AudioRecordingChildNodes | 0x24001C95 | ObjectID array |
+| AudioRecordingFilename | 0x1C001C96 | string |
+| AudioRecordingGuids | 0x1C001CA3 | blob |
+| AudioRecordingDuration | 0x14001CFD | int32 |
+| AudioRecordingDurations | 0x1C001D02 | blob |
+| AudioRecordingOids | 0x24001DBD | ObjectID array |
+| IFrameMediaType | 0x140035F2 | int32 |
+| IFrameOriginUrl | 0x1C0035F3 | string |
+| IFrameContentTitle | 0x1C00366C | string |
+
+- **Recordings [binary].** `IRecordMedia` is used by the audio-recording
+  code (0x1005D9AD4–0x1005E9384) and by the attachment code (0x1006EEC2C,
+  0x1006EF984), which takes a different path when it is non-zero. Most
+  `AudioRecording*` references are in the same recording code
+  (0x1005D7E90–0x1005E54C0). Their values are not decoded. The parser reports
+  `embeddedFile.recording = {media?, duration?}` (raw `IRecordMedia` and
+  `AudioRecordingDuration`) when either is present.
+- **Embeds.** One function (0x100821A14–0x100821AA0) reads `IFrameMediaType`.
+  The parser reports `image.embed = {url?, mediaType?, title?}` from the
+  `IFrame*` properties on a picture. On other objects the properties appear
+  by name in an unknown block's `properties`.
+- **Media types.** `sniffMediaType` (both parsers) now recognizes:
+
+  | Bytes | Media type |
+  |---|---|
+  | `ftyp` at 4 with brand `M4A ` or `M4B ` | audio/mp4 |
+  | `ftyp` at 4 with brand `qt  ` | video/quicktime |
+  | `ftyp` at 4 with brand `3gp` or `3g2` | video/3gpp |
+  | `ftyp` at 4 with any other brand | video/mp4 |
+  | `RIFF….WAVE` | audio/wav |
+  | `RIFF….AVI ` | video/x-msvideo |
+  | `ID3` | audio/mpeg |
+  | `OggS` | audio/ogg |
+  | `fLaC` | audio/flac |
+  | `caff` | audio/x-caf |
+  | `#!AMR` | audio/amr |
+  | `1A 45 DF A3` (EBML) | video/webm |
+  | ASF header GUID | audio/x-ms-wma or video/x-ms-wmv by extension, else video/x-ms-asf |
+  | `FF Fx` frame sync | audio/aac (ADTS) or audio/mpeg |
+
+- **Notecraft:**
+  - Attachments become `FileEl`s with a data: URL of that media type. A
+    generic type in the URL is replaced by the sniffed one, or by the
+    extension's.
+  - Audio and video get a matching extension when their name lacks one
+    ("Audio recording.m4a"), so the app shows a player.
+  - Attachments placed directly on a page, which were dropped before, come in
+    as an outline at their position.
+  - An embed becomes a link to its URL.
+
+### 15.7 Function map (§15)
+
+| Address | Role |
+|---|---|
+| 0x100844068–0x100844130 | read crop {X, Y, W, H}, default {0, 0, 1, 1} at 0x101363EE0 |
+| 0x100E42F2C–0x100E42FF8 | crop tool: write fractions |
+| 0x100848084, 0x100E43480 | remove the crop properties (reset) |
+| 0x100841F30, 0x100841F70 | picture view init: read `IsPrintoutPage`, clear `ImageCroppingActive` |
+| 0x10070C9A4–0x10070CA14 | File Printout: `OriginalPageNumber`/`DisplayedPageNumber` = page, `IsPrintoutPage` |
+| 0x1006F6294 | attachment view reads `PrintoutOutOfDate` |
+| 0x100960F88 / 0x100960FBC | `IsPartOfSplitPrintout` setter / getter |
+| 0x1008A645C, 0x1008A6978 | read `InkShape2DInfo` / `InkLineShapeInfo` as objects |
+| 0x100164840 | text scan for U+FFFC / U+FDD0 object starts |
+| RichEdit 0x59AA4, 0x58BA0 | structure characters U+FDD0 / U+FDEE / U+FDEF |
+| RichEdit `__const` 0x26BD2C | per-type UnicodeMath operators (OBJECTTYPE order) |
+| 0x1005D9AD4, 0x1006EF984 | `IRecordMedia` (recording code, attachment view) |
+| 0x100821A14 | `IFrameMediaType` |
+
+Addresses are in the arm64 slice of OneNote 16.114 (sha256 above) and of its
+`MicrosoftRichEdit.framework`. They were read with `llvm-objdump` from a
+scratch copy; no REA evidence bundle was recorded for §15.

@@ -138,6 +138,12 @@ pub fn versions_commit(state: State<'_, LibraryState>, changes: VersionChanges) 
     state.store.lock().map_err(err)?.commit_versions(changes).map_err(err)
 }
 
+/// Delete assets nothing refers to (after a section is password protected). Returns the deleted keys.
+#[tauri::command]
+pub fn library_prune_blobs(state: State<'_, LibraryState>) -> CmdResult<Vec<String>> {
+    state.store.lock().map_err(err)?.prune_blobs().map_err(err)
+}
+
 /// Point the app at another library folder (it is created if missing).
 #[tauri::command]
 pub fn library_set_location(app: AppHandle, state: State<'_, LibraryState>, path: String) -> CmdResult<Value> {

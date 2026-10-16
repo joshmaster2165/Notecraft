@@ -42,8 +42,8 @@ jobs:
           components: clippy
           targets: wasm32-unknown-unknown
       - uses: swatinem/rust-cache@v2
-      - name: Parser, core library and CLI
+      - name: Parser, writer, engine, core library and CLI
         run: |
-          cargo test -p onenote-re -p notecraft-core -p notecraft-cli
-          cargo clippy -p onenote-re -p notecraft-core -p notecraft-cli -- -D warnings
-          cargo build -p onenote-re --lib --target wasm32-unknown-unknown --features wasm
+          cargo test -p onenote-re -p onenote-writer -p notecraft-engine -p notecraft-core -p notecraft-cli
+          cargo clippy -p onenote-re -p onenote-writer -p notecraft-engine -p notecraft-core -p notecraft-cli --all-targets -- -D warnings
+          cargo build -p onenote-re -p notecraft-engine --lib --target wasm32-unknown-unknown --features onenote-re/wasm,notecraft-engine/wasm

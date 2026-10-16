@@ -24,10 +24,12 @@ export interface DrawState {
   highlighterColor: string;
   highlighterWidth: number;
   shape: ShapeKind;
+  /** Draw › Ink to Shape: pen strokes become clean shapes when the engine recognizes one. */
+  inkToShape: boolean;
 }
 
 export type SidePanel = "versions" | "tags" | "assistant" | null;
-export type Dialog = { kind: "movePage"; pageId: Id } | { kind: "moveSection"; sectionId: Id } | { kind: "moveGroup"; groupId: Id } | { kind: "templates" } | { kind: "trash" } | { kind: "oneNoteImport" } | { kind: "customTags" } | { kind: "settings"; tab?: "ai" | "agents" | "library" } | { kind: "generate"; media: "image" | "video" } | PromptDialog | null;
+export type Dialog = { kind: "movePage"; pageId: Id } | { kind: "moveSection"; sectionId: Id } | { kind: "moveGroup"; groupId: Id } | { kind: "templates" } | { kind: "trash" } | { kind: "oneNoteImport" } | { kind: "customTags" } | { kind: "settings"; tab?: "ai" | "agents" | "library" } | { kind: "generate"; media: "image" | "video" } | { kind: "protectSection" | "changePassword" | "removePassword"; sectionId: Id } | PromptDialog | null;
 export interface PromptDialog {
   kind: "prompt";
   title: string;
@@ -58,8 +60,8 @@ export interface UiState {
   preview: { pageId: Id; version: PageVersion } | null;
   zoomAnchor: ZoomAnchor;
   toast: { id: number; text: string } | null;
-  /** Insert › Record Audio: when the current recording started. */
-  recording: number | null;
+  /** Insert › Record Audio / Record Video: the recording in progress. */
+  recording: { since: number; kind: "audio" | "video" } | null;
 }
 
 export interface AppState {
@@ -98,7 +100,7 @@ class Store {
         active: null,
         searchOpen: false,
         sidePanel: null,
-        draw: { tool: "type", penColor: "#1f3a5f", penWidth: 2, highlighterColor: "#ffe14d", highlighterWidth: 14, shape: "rect" },
+        draw: { tool: "type", penColor: "#1f3a5f", penWidth: 2, highlighterColor: "#ffe14d", highlighterWidth: 14, shape: "rect", inkToShape: false },
         fullPage: false,
         findOpen: false,
         dialog: null,
@@ -167,6 +169,14 @@ class Store {
     }
     this.lastKey = null;
     this.set({ ...this.state, lib, canUndo: this.past.length > 0, canRedo: this.future.length > 0 });
+  }
+
+  /** Forget undo/redo (password-protected sections locking or unlocking). */
+  clearHistory() {
+    this.past = [];
+    this.future = [];
+    this.lastKey = null;
+    this.set({ ...this.state, canUndo: false, canRedo: false });
   }
 
   undo() {

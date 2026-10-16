@@ -23,7 +23,7 @@ function collect(lib: Library, scope: Scope, notebookId: string | null, sectionI
   const walk = (els: Element[], pageId: string, pageTitle: string) => {
     for (const e of els) {
       for (const tag of e.tags ?? []) {
-        const text = e.kind === "text" ? e.runs.map((r) => r.text).join("") : e.kind === "image" ? e.image.alt ?? "Picture" : e.kind === "file" ? e.name : "Table";
+        const text = e.kind === "text" ? e.runs.map((r) => r.text).join("") : e.kind === "image" ? e.image.alt ?? "Picture" : e.kind === "file" ? e.name : e.kind === "math" ? e.linear : "Table";
         hits.push({ tag, text, pageId, pageTitle, elementId: e.id });
       }
       if (e.kind === "table") for (const r of e.rows) for (const c of r.cells) walk(c.elements, pageId, pageTitle);

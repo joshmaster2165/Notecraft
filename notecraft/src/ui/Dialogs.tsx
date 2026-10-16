@@ -12,6 +12,7 @@ import { desktop, type FoundNotebook } from "../desktop.ts";
 import { Icon } from "./icons.tsx";
 import { Modal } from "./Modal.tsx";
 import { GenerateDialog, SettingsDialog } from "./SettingsDialog.tsx";
+import { ChangePasswordDialog, ProtectSectionDialog, RemovePasswordDialog } from "./LockViews.tsx";
 
 const close = () => store.setUi({ dialog: null });
 
@@ -38,8 +39,9 @@ function MovePageDialog({ pageId }: { pageId: string }) {
           <div key={nb.id}>
             <div className="pick-group"><Icon.notebook width={15} height={15} /> {nb.name}</div>
             {nb.sections.map((s) => (
-              <button key={s.id} role="option" aria-selected={target === s.id} className={`pick-item${target === s.id ? " is-on" : ""}`} onClick={() => setTarget(s.id)}>
+              <button key={s.id} role="option" aria-selected={target === s.id} className={`pick-item${target === s.id ? " is-on" : ""}`} onClick={() => setTarget(s.id)} disabled={ops.isSealedShut(s)} title={ops.isSealedShut(s) ? "Locked: unlock it to move pages in" : undefined}>
                 <span className="section-tab" style={{ background: s.color }} /> {s.name}
+                {ops.isSealedShut(s) && <Icon.lock width={13} height={13} />}
                 {s.id === hit.section.id && <span className="menu-meta">current</span>}
               </button>
             ))}
@@ -427,5 +429,8 @@ export function Dialogs() {
   if (dialog.kind === "templates") return <TemplatesDialog />;
   if (dialog.kind === "oneNoteImport") return <OneNoteImportDialog />;
   if (dialog.kind === "customTags") return <CustomTagsDialog />;
+  if (dialog.kind === "protectSection") return <ProtectSectionDialog sectionId={dialog.sectionId} />;
+  if (dialog.kind === "changePassword") return <ChangePasswordDialog sectionId={dialog.sectionId} />;
+  if (dialog.kind === "removePassword") return <RemovePasswordDialog sectionId={dialog.sectionId} />;
   return <TrashDialog />;
 }

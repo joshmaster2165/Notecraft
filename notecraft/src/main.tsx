@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./ui/App.tsx";
 import { loadLibrary } from "./store/persist.ts";
 import { startVersionTracking } from "./store/versionService.ts";
+import { startAutoLock } from "./store/locks.ts";
 import { store } from "./store/store.ts";
 import { setCustomTags } from "./model/tags.ts";
 import "./styles.css";
@@ -19,12 +20,12 @@ store.subscribe(() => {
   const defs = store.getState().lib.customTags;
   if (defs !== lastTags) setCustomTags((lastTags = defs));
 });
-void loadLibrary().then(startVersionTracking);
+void loadLibrary().then(() => (startVersionTracking(), startAutoLock()));
 
 // Development builds: a handle for automated tests of the desktop app (src-tauri automation_report).
 if (import.meta.env.DEV) {
-  void Promise.all([import("./model/ops.ts"), import("./store/actions.ts"), import("./ai/client.ts"), import("./ai/features.ts"), import("./store/versionStore.ts")]).then(
-    ([ops, actions, ai, features, versions]) => Object.assign(window, { __notecraft: { store, ops, actions, ai, features, versions } }),
+  void Promise.all([import("./model/ops.ts"), import("./store/actions.ts"), import("./ai/client.ts"), import("./ai/features.ts"), import("./store/versionStore.ts"), import("./store/locks.ts")]).then(
+    ([ops, actions, ai, features, versions, locks]) => Object.assign(window, { __notecraft: { store, ops, actions, ai, features, versions, locks } }),
   );
 }
 

@@ -45,6 +45,25 @@ pub struct InkStroke {
     /// InkBias: what OneNote thought the stroke was ("handwriting", "drawing" or "both").
     #[serde(skip_serializing_if = "Option::is_none")]
     pub bias: Option<&'static str>,
+    /// Draw › Ink to Shape: OneNote recognized this stroke as a shape (file-format.md §15.3).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shape: Option<InkShapeInfo>,
+}
+
+/// The recognized-shape property of a stroke (or of its ink container). The
+/// blob's layout is not decoded: `points` stay the stroke's own ink, which for
+/// a converted shape is the clean outline OneNote drew.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InkShapeInfo {
+    /// "shape2d" (InkShape2DInfo) or "line" (InkLineShapeInfo).
+    pub source: &'static str,
+    pub byte_length: usize,
+    /// The first 256 bytes, hex.
+    pub data: String,
+    /// InkShape2DInfoModifiedProxy / InkLineShapeInfoModifiedProxy.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub modified_proxy: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]

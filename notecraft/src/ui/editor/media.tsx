@@ -1,6 +1,6 @@
 // Images and attachments: inline (inside an outline) and floating on the page.
 import { memo, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from "react";
-import type { FileEl, FloatingImage, ImageData, ImageEl, ListRef } from "../../model/types.ts";
+import type { CropRect, FileEl, FloatingImage, ImageData, ImageEl, ListRef } from "../../model/types.ts";
 import { LAYOUT } from "../../model/types.ts";
 import * as ops from "../../model/ops.ts";
 import { store } from "../../store/store.ts";
@@ -11,6 +11,7 @@ import { askText } from "../prompt.ts";
 import { desktop } from "../../desktop.ts";
 import { download } from "../../store/actions.ts";
 import { pictureText, transcribeRecording } from "../../ai/features.ts";
+import { cropImage } from "../../engine.ts";
 import { rotateDataUrl } from "../../lib/image.ts";
 
 function ImageBody({ image, width, height }: { image: ImageData; width: number; height: number }) {
@@ -27,7 +28,7 @@ function ImageBody({ image, width, height }: { image: ImageData; width: number; 
 }
 
 /** Shown while a picture is selected: Alt Text, Rotate Left, Rotate Right. */
-function ImageTools({ image, update }: { image: ImageData; update: (patch: Partial<ImageData>) => void }) {
+function ImageTools({ image, update, onCrop }: { image: ImageData; update: (patch: Partial<ImageData>) => void; onCrop: () => void }) {
   const stop = (e: PointerEvent | MouseEvent<HTMLElement>) => (e.stopPropagation(), e.preventDefault());
   const rotate = async (dir: 1 | -1) => {
     if (!image.src) return store.toast("This picture's data wasn't stored in the imported file, so it can't be rotated.");
@@ -61,8 +62,84 @@ function ImageTools({ image, update }: { image: ImageData; update: (patch: Parti
       >
         Text
       </button>
+      <button title="Crop the picture" onClick={() => (image.src ? onCrop() : store.toast("This picture's data wasn't stored in the imported file."))}>Crop</button>
       <button title="Rotate left" aria-label="Rotate left" onClick={() => void rotate(-1)}>⟲</button>
       <button title="Rotate right" aria-label="Rotate right" onClick={() => void rotate(1)}>⟳</button>
+    </div>
+  );
+}
+
+const FULL: CropRect = { topLeftXPercentage: 0, topLeftYPercentage: 0, widthPercentage: 100, heightPercentage: 100 };
+
+/**
+ * Picture › Crop: the uncropped picture with a box to drag. Applying crops the
+ * original in Rust and keeps OneNote's four percentages so it can be redone.
+ */
+function CropOverlay({ image, w, h, onDone }: { image: ImageData; w: number; h: number; onDone: (patch: Partial<ImageData> | null) => void }) {
+  const c0 = image.crop ?? FULL;
+  const orig = image.original ?? { src: image.src!, width: image.width, height: image.height };
+  // Display size of the whole (uncropped) picture at the current zoom of this one.
+  const W = Math.round((w * 100) / c0.widthPercentage);
+  const H = Math.round((h * 100) / c0.heightPercentage);
+  const [rect, setRect] = useState<CropRect>(c0);
+  const [busy, setBusy] = useState(false);
+  const drag = (edges: string) => (e: PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const start = rect;
+    dragPointer(
+      e,
+      (dx, dy) => {
+        const px = (dx / W) * 100, py = (dy / H) * 100, min = 5;
+        let { topLeftXPercentage: x, topLeftYPercentage: y, widthPercentage: cw, heightPercentage: ch } = start;
+        if (edges.includes("w")) {
+          const nx = Math.min(Math.max(0, x + px), x + cw - min);
+          cw += x - nx;
+          x = nx;
+        }
+        if (edges.includes("e")) cw = Math.min(100 - x, Math.max(min, cw + px));
+        if (edges.includes("n")) {
+          const ny = Math.min(Math.max(0, y + py), y + ch - min);
+          ch += y - ny;
+          y = ny;
+        }
+        if (edges.includes("s")) ch = Math.min(100 - y, Math.max(min, ch + py));
+        setRect({ topLeftXPercentage: x, topLeftYPercentage: y, widthPercentage: cw, heightPercentage: ch });
+      },
+      () => {},
+    );
+  };
+  const apply = async () => {
+    const full = rect.widthPercentage >= 99.9 && rect.heightPercentage >= 99.9;
+    if (full) return onDone({ src: orig.src, width: W, height: H, crop: undefined, original: undefined });
+    setBusy(true);
+    try {
+      const out = await cropImage(orig.src, rect);
+      onDone({ src: out.src, width: Math.round((W * rect.widthPercentage) / 100), height: Math.round((H * rect.heightPercentage) / 100), crop: rect, original: orig });
+    } catch (e) {
+      store.toast((e as Error).message ?? String(e));
+      setBusy(false);
+    }
+  };
+  const box = { left: `${rect.topLeftXPercentage}%`, top: `${rect.topLeftYPercentage}%`, width: `${rect.widthPercentage}%`, height: `${rect.heightPercentage}%` };
+  return (
+    <div
+      className="crop-layer"
+      style={{ left: -(c0.topLeftXPercentage / 100) * W, top: -(c0.topLeftYPercentage / 100) * H, width: W, height: H }}
+      onPointerDown={(e) => e.stopPropagation()}
+      onKeyDown={(e) => (e.stopPropagation(), e.key === "Escape" && onDone(null), e.key === "Enter" && void apply())}
+    >
+      <img src={orig.src} alt="" draggable={false} style={{ width: W, height: H }} />
+      <div className="crop-box" style={box}>
+        {["n", "e", "s", "w", "nw", "ne", "sw", "se"].map((d) => (
+          <span key={d} className={`crop-handle crop-${d}`} onPointerDown={drag(d)} />
+        ))}
+      </div>
+      <div className="crop-actions">
+        <button className="btn btn-primary" disabled={busy} onClick={() => void apply()}>{busy ? "Cropping…" : "Crop"}</button>
+        <button className="btn" onClick={() => setRect(FULL)}>Reset</button>
+        <button className="btn" onClick={() => onDone(null)}>Cancel</button>
+      </div>
     </div>
   );
 }
@@ -76,6 +153,7 @@ function onDeleteKey(e: KeyboardEvent, remove: () => void) {
 
 export const InlineImage = memo(function InlineImage({ el, listRef }: { el: ImageEl; listRef: ListRef }) {
   const readOnly = useReadOnly();
+  const [cropping, setCropping] = useState(false);
   const [liveW, setLiveW] = useState<number | null>(null);
   const w = liveW ?? el.image.width;
   const h = Math.round(w * (el.image.height / el.image.width || 1));
@@ -102,7 +180,8 @@ export const InlineImage = memo(function InlineImage({ el, listRef }: { el: Imag
       >
         <ImageBody image={el.image} width={w} height={h} />
         {!readOnly && <span className="media-resize" onPointerDown={resize} />}
-        {!readOnly && <ImageTools image={el.image} update={(patch) => store.edit((d) => ops.updateInlineImage(d, listRef, el.id, patch))} />}
+        {!readOnly && <ImageTools image={el.image} update={(patch) => store.edit((d) => ops.updateInlineImage(d, listRef, el.id, patch))} onCrop={() => setCropping(true)} />}
+        {cropping && <CropOverlay image={el.image} w={w} h={h} onDone={(patch) => (setCropping(false), patch && store.edit((d) => ops.updateInlineImage(d, listRef, el.id, patch)))} />}
       </figure>
     </div>
   );
@@ -110,6 +189,7 @@ export const InlineImage = memo(function InlineImage({ el, listRef }: { el: Imag
 
 export const FloatingImageView = memo(function FloatingImageView({ pageId, img }: { pageId: string; img: FloatingImage }) {
   const readOnly = useReadOnly();
+  const [cropping, setCropping] = useState(false);
   const [live, setLive] = useState<{ dx: number; dy: number; w: number | null } | null>(null);
   const w = live?.w ?? img.width;
   const h = Math.round(w * (img.height / img.width || 1));
@@ -153,7 +233,8 @@ export const FloatingImageView = memo(function FloatingImageView({ pageId, img }
     >
       <ImageBody image={img} width={w} height={h} />
       {!readOnly && <span className="media-resize" onPointerDown={resize} />}
-      {!readOnly && <ImageTools image={img} update={(patch) => store.edit((d) => ops.updateFloatingImage(d, pageId, img.id, patch))} />}
+      {!readOnly && <ImageTools image={img} update={(patch) => store.edit((d) => ops.updateFloatingImage(d, pageId, img.id, patch))} onCrop={() => setCropping(true)} />}
+      {cropping && <CropOverlay image={img} w={w} h={h} onDone={(patch) => (setCropping(false), patch && store.edit((d) => ops.updateFloatingImage(d, pageId, img.id, patch)))} />}
     </figure>
   );
 });
@@ -173,7 +254,7 @@ export function FileChip({ el, listRef }: { el: FileEl; listRef?: ListRef }) {
   const readOnly = useReadOnly();
   const [busy, setBusy] = useState(false);
   const size = el.size ? ` · ${el.size < 1e6 ? `${Math.round(el.size / 1024)} KB` : `${(el.size / 1e6).toFixed(1)} MB`}` : "";
-  if (el.src && VIDEO.test(el.name)) {
+  if (el.src && (VIDEO.test(el.name) || el.src.startsWith("data:video/"))) {
     return (
       <div className="oe oe-file oe-video" style={{ paddingLeft: el.depth * LAYOUT.indent }}>
         <figure className="video-chip">

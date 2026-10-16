@@ -6,6 +6,7 @@ import { deletePage, newPage, selectPage } from "../store/actions.ts";
 import { copyPageLink } from "../store/links.ts";
 import { Icon } from "./icons.tsx";
 import { desktop } from "../desktop.ts";
+import { lockState, useLockVersion } from "../store/locks.ts";
 
 const short = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" });
 
@@ -16,8 +17,21 @@ export function PageList() {
   const [dragId, setDragId] = useState<string | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null);
+  useLockVersion();
 
   if (!section || !sectionId) return <aside className="pagelist" />;
+  if (lockState(section) === "locked") {
+    return (
+      <aside className="pagelist" aria-label={`${section.name} (locked)`}>
+        {desktop && <div className="drag-strip" data-tauri-drag-region />}
+        <header className="pagelist-head">
+          <span className="section-tab" style={{ background: section.color }} />
+          <h2>{section.name}</h2>
+        </header>
+        <p className="pagelist-locked"><Icon.lock width={16} height={16} /> This section is locked.</p>
+      </aside>
+    );
+  }
 
   return (
     <aside className="pagelist" aria-label={`Pages in ${section.name}`}>

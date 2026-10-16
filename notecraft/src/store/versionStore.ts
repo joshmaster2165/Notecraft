@@ -3,7 +3,7 @@
 // references so repeated snapshots of a page keep one copy of each picture.
 import type { Id, Page, PageVersion, VersionReason } from "../model/types.ts";
 import { MAX_VERSIONS_PER_PAGE, pageSignature, pruneIds } from "../model/versions.ts";
-import { batch, get, getAllByIndex } from "../lib/idb.ts";
+import { batch, get, getAll, getAllByIndex, getAllKeys } from "../lib/idb.ts";
 import { newId, nowIso } from "../lib/id.ts";
 import { migratePage } from "../model/migrate.ts";
 import { blobRefs, extractBlobs, hydrateBlobs } from "../lib/blobs.ts";
@@ -119,4 +119,22 @@ export async function addImportedVersions(versions: Omit<PageVersion, "id">[]): 
   await backend.commit(records, [], blobs);
   new Set(records.map((r) => r.pageId)).forEach(notify);
   return records.length;
+}
+
+/**
+ * Delete every stored version of these pages (a section was password
+ * protected, so its old versions would stay readable). In the browser the
+ * pictures only those versions used go too; the desktop app prunes its assets
+ * folder afterwards.
+ */
+export async function deleteVersionsOf(pageIds: Id[]): Promise<void> {
+  if (!pageIds.length) return;
+  const drop = (await Promise.all(pageIds.map((id) => backend.list(id)))).flat().map((v) => v.id);
+  if (drop.length) await backend.commit([], drop, new Map());
+  pageIds.forEach((id) => (latestSig.delete(id), notify(id)));
+  if (desktop) return;
+  const used = new Set<string>();
+  for (const v of await getAll<StoredVersion>("versions")) blobRefs(v.page, used);
+  const stale = (await getAllKeys("blobs")).filter((k) => !used.has(String(k)));
+  if (stale.length) await batch(["blobs"], (tx) => stale.forEach((k) => tx.objectStore("blobs").delete(k)));
 }

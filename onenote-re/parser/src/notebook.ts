@@ -28,10 +28,11 @@ import {
   pointBounds,
   strokePoints,
   type InkBlock,
+  type InkShapeInfo,
   type InkStroke,
 } from "./ink.ts";
 
-export type { InkBlock, InkStroke } from "./ink.ts";
+export type { InkBlock, InkShapeInfo, InkStroke } from "./ink.ts";
 
 // --- output types ------------------------------------------------------------
 
@@ -54,9 +55,40 @@ export interface TextStyle {
   superscript?: boolean;
   subscript?: boolean;
   hidden?: boolean;
+  /** MathFormatting: the run is part of an equation (RichEdit's CFE_MATH). */
   math?: boolean;
+  /** MathOrdinary / MathNoBuildup: RichEdit's CFE_MATHORDINARY / CFE_MATHNOBUILDUP. */
+  mathOrdinary?: boolean;
+  mathNoBuildup?: boolean;
+  /** The math object this run's U+FDD0 starts (MathData_*; file-format.md §15.4). */
+  mathObject?: MathObject;
   languageId?: number;
   styleId?: string;
+}
+
+/**
+ * One math object (fraction, radical, n-ary, script, brackets…) in equation
+ * text. Its text is U+FDD0, the arguments separated by U+FDEE, then U+FDEF;
+ * the MathData_* properties sit on the U+FDD0 run's formatting. The field
+ * names follow ITextRange2::GetInlineObject, whose parameters they match.
+ */
+export interface MathObject {
+  /** MathData_Type: RichEdit's inline object type (tom.h OBJECTTYPE: 16 fraction, 21 n-ary, 25 radical, 29 subscript…). */
+  type: number;
+  /** MathData_cArg: number of arguments. */
+  args?: number;
+  /** MathData_Char / Char1 / Char2: UTF-16 code units (n-ary operator or accent, brackets, separator). */
+  char?: number;
+  char1?: number;
+  char2?: number;
+  /** MathData_Align. */
+  align?: number;
+  /** MathData_cCol: matrix columns. */
+  columns?: number;
+  /** MathData_TeXStyle. */
+  texStyle?: number;
+  /** MathData_FontAlign. */
+  fontAlign?: number;
 }
 
 export interface TextRun {
@@ -112,8 +144,41 @@ export interface ImageBlock {
   ocrText?: string;
   /** UnverifiedHash (20 bytes, hex): the key cache.ts matches against SHA-1 of cached files. */
   unverifiedHash?: string;
+  /** Picture › Crop (file-format.md §15.1). */
+  crop?: ImageCrop;
+  /** One page of a File Printout (file-format.md §15.2). */
+  printout?: PrintoutInfo;
+  /** Embedded web content (IFrame*: an online video, for example). */
+  embed?: EmbedInfo;
   assetStatus: AssetStatus;
   asset: AssetInfo | null;
+}
+
+/**
+ * The kept rectangle as percentages (0–100) of the original picture. OneNote
+ * stores fractions (0–1) as float32; the converter multiplies by 100.
+ */
+export interface ImageCrop {
+  topLeftXPercentage: number;
+  topLeftYPercentage: number;
+  widthPercentage: number;
+  heightPercentage: number;
+}
+
+export interface PrintoutInfo {
+  /** OriginalPageNumber (else DisplayedPageNumber): the 1-based page of the printed file. */
+  page?: number;
+  /** IsPartOfSplitPrintout: a long printout continued on another OneNote page. */
+  splitPart?: boolean;
+  /** PrintoutOutOfDate: the attachment changed after this picture was made. */
+  outOfDate?: boolean;
+}
+
+export interface EmbedInfo {
+  url?: string;
+  /** IFrameMediaType (not decoded). */
+  mediaType?: number;
+  title?: string;
 }
 
 export interface EmbeddedFileBlock {
@@ -122,6 +187,10 @@ export interface EmbeddedFileBlock {
   layout: Layout;
   filename?: string;
   sourcePath?: string;
+  /** A recording made in OneNote (Insert › Audio / Video). */
+  recording?: { media?: number; duration?: number };
+  /** PrintoutOutOfDate: the file changed after its printout pictures were made. */
+  printoutOutOfDate?: boolean;
   assetStatus: AssetStatus;
   asset: AssetInfo | null;
 }
@@ -236,6 +305,12 @@ export interface NotebookJson {
   };
   section: {
     id: string | null;
+    /**
+     * Password protected in OneNote: encrypted object spaces
+     * (ObjectDataEncryptionKeyV2FNDX) or IsEncrypted on the section. Their
+     * pages are not decrypted or converted (file-format.md §15.5).
+     */
+    encrypted?: boolean;
     name?: string;
     entityGuid?: string;
     createdAt?: string;
@@ -365,6 +440,28 @@ export function sniffMediaType(b: Uint8Array, extension?: string): string {
   if (starts(0xd7, 0xcd, 0xc6, 0x9a)) return "image/wmf";
   if (starts(0x50, 0x4b, 0x03, 0x04)) return "application/zip";
   if (starts(0x49, 0x49, 0x2a, 0x00) || starts(0x4d, 0x4d, 0x00, 0x2a)) return "image/tiff";
+  // Audio and video: recordings and attached media (file-format.md §15.6).
+  const tag = (at: number, s: string) => [...s].every((c, i) => b[at + i] === c.charCodeAt(0));
+  if (tag(4, "ftyp")) {
+    if (tag(8, "M4A ") || tag(8, "M4B ")) return "audio/mp4";
+    if (tag(8, "qt  ")) return "video/quicktime";
+    if (tag(8, "3gp") || tag(8, "3g2")) return "video/3gpp";
+    return "video/mp4";
+  }
+  if (starts(0x52, 0x49, 0x46, 0x46) && tag(8, "WAVE")) return "audio/wav";
+  if (starts(0x52, 0x49, 0x46, 0x46) && tag(8, "AVI ")) return "video/x-msvideo";
+  if (tag(0, "ID3")) return "audio/mpeg";
+  if (tag(0, "OggS")) return "audio/ogg";
+  if (tag(0, "fLaC")) return "audio/flac";
+  if (tag(0, "caff")) return "audio/x-caf";
+  if (tag(0, "#!AMR")) return "audio/amr";
+  if (starts(0x1a, 0x45, 0xdf, 0xa3)) return "video/webm";
+  if (starts(0x30, 0x26, 0xb2, 0x75, 0x8e, 0x66, 0xcf, 0x11)) {
+    const ext = extension?.replace(/^\./, "").toLowerCase();
+    return ext === "wma" ? "audio/x-ms-wma" : ext === "wmv" ? "video/x-ms-wmv" : "video/x-ms-asf";
+  }
+  if (b[0] === 0xff && ((b[1] ?? 0) & 0xf6) === 0xf0) return "audio/aac";
+  if (b[0] === 0xff && ((b[1] ?? 0) & 0xe0) === 0xe0) return "audio/mpeg";
   if (extension) return `application/x-${extension.replace(/^\./, "")}`;
   return "application/octet-stream";
 }
@@ -373,6 +470,86 @@ export function sniffMediaType(b: Uint8Array, extension?: string): string {
 function compact<T extends object>(o: T): T {
   for (const k of Object.keys(o) as (keyof T)[]) if (o[k] === undefined) delete o[k];
   return o;
+}
+
+// --- crop, printouts, Ink to Shape, equations, embeds (file-format.md §15) -------
+
+// [X, Y, width, height]. The 0x12xx family is the one OneNote for Mac reads and
+// writes; the Deprecated_ family is read when the current one is absent.
+const CROP_CURRENT = ["ImageCroppedTopLeftXPercentage", "ImageCroppedTopLeftYPercentage", "ImageCroppedWidthPercentage", "ImageCroppedHeightPercentage"].map((n) => Prop[n]!);
+const CROP_DEPRECATED = ["Deprecated_ImageCroppedTopLeftXPercentage", "Deprecated_ImageCroppedTopLeftYPercentage", "Deprecated_ImageCroppedWidthPercentage", "Deprecated_ImageCroppedHeightPercentage"].map((n) => Prop[n]!);
+const clamp100 = (v: number) => Math.min(100, Math.max(0, v));
+
+/**
+ * The crop rectangle in percent of the original picture. OneNote stores
+ * float32 fractions with an uncropped default of {0, 0, 1, 1}; a rectangle
+ * with any value above 1 is taken as already in percent. No crop → undefined.
+ */
+function imageCrop(p: Props): ImageCrop | undefined {
+  const ids = [CROP_CURRENT, CROP_DEPRECATED].find((set) => set.some((id) => p.has(id)));
+  if (!ids) return undefined;
+  const v = ids.map((id) => p.f32(id));
+  const given = v.filter((n) => n !== undefined);
+  if (!given.every(Number.isFinite)) return undefined;
+  const scale = given.some((n) => n > 1.001) ? 1 : 100;
+  // A missing value keeps the uncropped default: left/top 0, width/height the whole picture.
+  const pct = (n: number | undefined, full: number) => (n === undefined ? full : clamp100(n * scale));
+  const x = round(pct(v[0], 0));
+  const y = round(pct(v[1], 0));
+  const width = round(Math.min(pct(v[2], 100), 100 - x));
+  const height = round(Math.min(pct(v[3], 100), 100 - y));
+  if (!(width > 0 && height > 0) || (x === 0 && y === 0 && width >= 100 && height >= 100)) return undefined;
+  return { topLeftXPercentage: x, topLeftYPercentage: y, widthPercentage: width, heightPercentage: height };
+}
+
+function printoutInfo(p: Props): PrintoutInfo | undefined {
+  const isPage = p.bool(Prop.IsPrintoutPage!) === true;
+  const split = p.bool(Prop.IsPartOfSplitPrintout!) === true;
+  if (!isPage && !split) return undefined;
+  return compact({
+    page: p.u32(Prop.OriginalPageNumber!) || p.u32(Prop.DisplayedPageNumber!) || undefined,
+    splitPart: split || undefined,
+    outOfDate: p.bool(Prop.PrintoutOutOfDate!) || undefined,
+  });
+}
+
+function embedInfo(p: Props): EmbedInfo | undefined {
+  const url = p.str(Prop.IFrameOriginUrl!);
+  const mediaType = p.u32(Prop.IFrameMediaType!);
+  const title = p.str(Prop.IFrameContentTitle!);
+  if (url === undefined && mediaType === undefined && title === undefined) return undefined;
+  return compact({ url, mediaType, title });
+}
+
+const INK_SHAPES = [
+  ["shape2d", "InkShape2DInfo", "InkShape2DInfoModifiedProxy"],
+  ["line", "InkLineShapeInfo", "InkLineShapeInfoModifiedProxy"],
+] as const;
+
+/** InkShape2DInfo / InkLineShapeInfo on an ink object, undecoded. */
+function inkShape(p: Props): InkShapeInfo | undefined {
+  for (const [source, info, proxy] of INK_SHAPES) {
+    const b = p.bytes(Prop[info]!);
+    if (b) return compact({ source, byteLength: b.length, data: hex(b.subarray(0, 256)), modifiedProxy: p.u32(Prop[proxy]!) });
+  }
+  return undefined;
+}
+
+/** MathData_* on a run's formatting: present when MathData_Type is. */
+function mathObject(p: Props): MathObject | undefined {
+  const type = p.u32(Prop.MathData_Type!);
+  if (type === undefined) return undefined;
+  return compact({
+    type,
+    args: p.u32(Prop.MathData_cArg!),
+    char: p.u32(Prop.MathData_Char!),
+    char1: p.u32(Prop.MathData_Char1!),
+    char2: p.u32(Prop.MathData_Char2!),
+    align: p.u32(Prop.MathData_Align!),
+    columns: p.u32(Prop.MathData_cCol!),
+    texStyle: p.u32(Prop.MathData_TeXStyle!),
+    fontAlign: p.u32(Prop.MathData_FontAlign!),
+  });
 }
 
 // --- converter -----------------------------------------------------------------
@@ -414,10 +591,17 @@ export class NotebookConverter {
         objectSpaces: s.objectSpaces.size,
         embeddedFiles: s.fileData.size,
       },
-      section: { id: s.rootGosid ? egKey(s.rootGosid) : null, pages: [] },
+      // `encrypted` is declared here so that it serializes after `id` whenever it is set.
+      section: { id: s.rootGosid ? egKey(s.rootGosid) : null, encrypted: undefined, pages: [] },
       diagnostics: { warnings: s.warnings, encryptedObjectSpaces: [] },
     };
+    // Password-protected sections (file-format.md §15.5): detected, never decrypted.
     for (const sp of s.objectSpaces.values()) if (sp.encrypted) out.diagnostics.encryptedObjectSpaces.push(egKey(sp.gosid));
+    const nEncrypted = out.diagnostics.encryptedObjectSpaces.length;
+    if (nEncrypted) {
+      out.section.encrypted = true;
+      s.warnings.push(`password-protected section: ${nEncrypted} of ${s.objectSpaces.size} object spaces are encrypted (ObjectDataEncryptionKeyV2FNDX) and were not converted`);
+    }
     if (this.opts.resolveFileData) out.diagnostics.fileDataLookups = this.lookups = { requested: 0, resolved: 0 };
     if (this.opts.sectionName) out.section.name = this.opts.sectionName;
 
@@ -426,6 +610,8 @@ export class NotebookConverter {
       s.warnings.push("no root object space");
       return out;
     }
+    // The section node itself is encrypted: nothing below it can be read.
+    if (root.encrypted) return out;
     const rev = s.currentRevision(root, RootRole.DefaultContent);
     const rootOid = rev && s.rootObject(root, rev, RootRole.DefaultContent);
     const sectionNode = rev && rootOid ? s.findObject(rev, rootOid, root) : undefined;
@@ -439,16 +625,30 @@ export class NotebookConverter {
     }
     const ctx: Ctx = { space: root, rev, depth: 0 };
     const sp = this.props(sectionNode);
-    out.section.entityGuid = sp.str(Prop.NotebookManagementEntityGuid!);
-    out.section.createdAt = fileTime(sp.bytes(Prop.TopologyCreationTimeStamp!));
-    out.section.color = colorRef(sp.u32(Prop.NotebookColor!));
-
-    // Section metadata root, when present, carries the display name.
+    // Section metadata root, when present, carries the display name and the color.
     const metaRev = s.currentRevision(root, RootRole.Metadata) ?? rev;
     const metaOid = s.rootObject(root, metaRev, RootRole.Metadata);
     const meta = metaOid ? s.findObject(metaRev, metaOid, root) : undefined;
-    const displayName = meta ? this.props(meta).str(Prop.SectionDisplayName!) : undefined;
+    const mp = this.props(meta);
+
+    out.section.entityGuid = sp.str(Prop.NotebookManagementEntityGuid!);
+    out.section.createdAt = fileTime(sp.bytes(Prop.TopologyCreationTimeStamp!));
+    // NotebookColor is on SectionMetaData in OneNote's files ([MS-ONE]); the
+    // section node and the deprecated property are fallbacks.
+    out.section.color =
+      colorRef(mp.u32(Prop.NotebookColor!)) ??
+      colorRef(sp.u32(Prop.NotebookColor!)) ??
+      colorRef(mp.u32(Prop.Deprecated_SectionColor!)) ??
+      colorRef(sp.u32(Prop.Deprecated_SectionColor!));
+
+    const displayName = meta ? mp.str(Prop.SectionDisplayName!) : undefined;
     if (displayName) out.section.name = displayName;
+    // OneNote's own flags for protected content, on the section or its metadata.
+    const flag = (id: number) => sp.bool(id) === true || mp.bool(id) === true;
+    if (flag(Prop.IsEncrypted!) || flag(Prop.IsSomeEncryptedContentUnavailable!)) {
+      out.section.encrypted = true;
+      s.warnings.push(`password-protected section: the section is marked ${flag(Prop.IsEncrypted!) ? "IsEncrypted" : "IsSomeEncryptedContentUnavailable"}`);
+    }
 
     for (const seriesOid of sp.oids(Prop.ElementChildNodes!)) {
       const series = this.resolve(ctx, seriesOid);
@@ -524,7 +724,14 @@ export class NotebookConverter {
         if (b?.type === "outline") page.titleBlocks.push(b);
       }
     }
-    if (!page.title) page.title = page.titleBlocks.map((b) => plainText(b.children)).join(" ").trim();
+    // No cached title: the title outline's text, never OneNote's date/time line under it.
+    if (!page.title) {
+      page.title = page.titleBlocks
+        .filter((b) => b.role !== "titleDate" && b.role !== "titleTime")
+        .map((b) => plainText(b.children))
+        .join(" ")
+        .trim();
+    }
 
     for (const o of pp.oids(Prop.ElementChildNodes!)) {
       const b = this.convertPageChild(ctx, o);
@@ -615,9 +822,11 @@ export class NotebookConverter {
         const dp = this.props(data);
         const bb = decodeBoundingBox(dp.bytes(Prop.InkBoundingBox!));
         if (bb && !box) box = [bb[0] * sx * HIMETRIC_PT + x, bb[1] * sy * HIMETRIC_PT + y, bb[2] * sx * HIMETRIC_PT + x, bb[3] * sy * HIMETRIC_PT + y];
+        // Ink to Shape info on the stroke wins; else the data node's or container's applies.
+        const shape = inkShape(dp) ?? inkShape(p);
         for (const so of dp.oids(Prop.InkStrokes!)) {
           const sd = this.resolve(ctx, so);
-          const stroke = sd && this.convertStroke(ctx, sd, sx, sy, x, y);
+          const stroke = sd && this.convertStroke(ctx, sd, sx, sy, x, y, shape);
           if (stroke) strokes.push(stroke);
         }
       }
@@ -640,7 +849,7 @@ export class NotebookConverter {
     return compact({ type: "ink" as const, id: egKey(decl.oid), embedded: embedded || undefined, bounds, strokes });
   }
 
-  private convertStroke(ctx: Ctx, decl: ObjectDeclaration, sx: number, sy: number, x: number, y: number): InkStroke | null {
+  private convertStroke(ctx: Ctx, decl: ObjectDeclaration, sx: number, sy: number, x: number, y: number, shape?: InkShapeInfo): InkStroke | null {
     const p = this.props(decl);
     const path = p.bytes(Prop.InkPath!);
     if (!path) return null;
@@ -664,6 +873,7 @@ export class NotebookConverter {
       highlighter: rop === 9 || (transparency ?? 0) >= 64 || undefined,
       penTip: sp.u32(Prop.InkPenTipShape!) || undefined,
       bias: bias === 0 ? "handwriting" : bias === 1 ? "drawing" : bias === 2 ? "both" : undefined,
+      shape: inkShape(p) ?? shape,
     } satisfies InkStroke);
   }
 
@@ -799,6 +1009,9 @@ export class NotebookConverter {
       subscript: p.bool(Prop.Subscript!) || undefined,
       hidden: p.bool(Prop.Hidden!) || undefined,
       math: p.bool(Prop.MathFormatting!) || undefined,
+      mathOrdinary: p.bool(Prop.MathOrdinary!) || undefined,
+      mathNoBuildup: p.bool(Prop.MathNoBuildup!) || undefined,
+      mathObject: mathObject(p),
       languageId: p.u32(Prop.LanguageID!),
       styleId: p.str(Prop.ParagraphStyleId!),
     });
@@ -903,6 +1116,9 @@ export class NotebookConverter {
       isBackground: p.bool(Prop.IsBackground!) || undefined,
       ocrText: p.str(Prop.RichEditTextUnicode!) || undefined,
       unverifiedHash,
+      crop: imageCrop(p),
+      printout: printoutInfo(p),
+      embed: embedInfo(p),
       ...this.fileAsset(container, unverifiedHash),
     } as ImageBlock);
   }
@@ -917,6 +1133,10 @@ export class NotebookConverter {
       layout: this.layout(p),
       filename: p.str(Prop.EmbeddedFileName!),
       sourcePath: p.str(Prop.SourceFilepath!),
+      recording: p.has(Prop.IRecordMedia!) || p.has(Prop.AudioRecordingDuration!)
+        ? compact({ media: p.u32(Prop.IRecordMedia!), duration: p.u32(Prop.AudioRecordingDuration!) })
+        : undefined,
+      printoutOutOfDate: p.bool(Prop.PrintoutOutOfDate!) || undefined,
       ...this.fileAsset(container, hashBytes?.length === 20 ? hex(hashBytes) : undefined),
     } as EmbeddedFileBlock);
   }
@@ -983,7 +1203,8 @@ export function plainText(elements: OutlineElementBlock[]): string {
 const STRING_PROPS = new Set(
   ["Font", "RichEditTextUnicode", "NumberListFormat", "ListFont", "CachedTitleString", "CachedTitleStringFromPage", "Author",
     "EmbeddedFileName", "SourceFilepath", "ConflictingUserName", "ImageFilename", "ImageAltText", "ParagraphStyleId",
-    "NoteTagLabel", "SectionDisplayName", "NextStyle", "WzHyperlinkUrl", "NotebookManagementEntityGuid"].map((n) => Prop[n]!),
+    "NoteTagLabel", "SectionDisplayName", "NextStyle", "WzHyperlinkUrl", "NotebookManagementEntityGuid",
+    "IFrameOriginUrl", "IFrameContentTitle", "AudioRecordingFilename"].map((n) => Prop[n]!),
 );
 
 export function describeProperties(set: PropertySet | null): Record<string, unknown> {

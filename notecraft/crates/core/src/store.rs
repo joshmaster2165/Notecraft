@@ -1,6 +1,6 @@
 //! Reading and writing the library folder.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fs;
 use std::io;
@@ -309,6 +309,47 @@ impl LibraryStore {
         Ok(key)
     }
 
+    /// Delete asset files nothing refers to any more: no page, notebook,
+    /// library index or page version. Run after a section is password
+    /// protected so its pictures don't stay readable in `assets/`. Returns
+    /// the deleted keys (the app forgets it stored them).
+    pub fn prune_blobs(&self) -> Result<Vec<String>> {
+        let mut used: HashSet<String> = HashSet::new();
+        let mut collect = |v: &mut Value| {
+            walk_strings(v, &mut |s| {
+                if let Some(key) = s.strip_prefix(BLOB_PREFIX) {
+                    used.insert(key.to_string());
+                }
+                None
+            })
+        };
+        if let Some(mut v) = read_json(&self.root.join(LIBRARY_FILE))? {
+            collect(&mut v);
+        }
+        let mut files = Vec::new();
+        for dir in ["notebooks", "pages"] {
+            files.extend(fs::read_dir(self.root.join(dir)).into_iter().flatten().filter_map(|e| e.ok()).map(|e| e.path()));
+        }
+        for d in fs::read_dir(self.root.join("versions")).into_iter().flatten().filter_map(|e| e.ok()) {
+            files.extend(fs::read_dir(d.path()).into_iter().flatten().filter_map(|e| e.ok()).map(|e| e.path()));
+        }
+        for p in files.iter().filter(|p| p.extension().and_then(|x| x.to_str()) == Some("json")) {
+            if let Some(mut v) = read_json(p)? {
+                collect(&mut v);
+            }
+        }
+        let mut removed = Vec::new();
+        for e in fs::read_dir(self.assets_dir()).into_iter().flatten().filter_map(|e| e.ok()) {
+            let path = e.path();
+            let Some(key) = path.file_stem().and_then(|s| s.to_str()).map(str::to_string) else { continue };
+            if path.is_file() && safe_name(&key) && !used.contains(&key) {
+                remove_if_exists(&path)?;
+                removed.push(key);
+            }
+        }
+        Ok(removed)
+    }
+
     /// Replace every `notecraft-blob:<key>` string with the blob's data URL.
     pub fn inline_blobs(&self, value: &mut Value) {
         let mut cache: HashMap<String, Option<String>> = HashMap::new();
@@ -506,5 +547,26 @@ mod tests {
         assert_eq!(s.get_version("v1").unwrap().unwrap()["at"], "2026-01-01");
         s.commit_versions(VersionChanges { delete: vec!["v2".into()], ..Default::default() }).unwrap();
         assert_eq!(s.list_versions("p1").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn prune_blobs_keeps_only_referenced_assets() {
+        let (_d, s) = store();
+        let url = |b: u8| crate::util::encode_data_url("image/png", &[137, 80, 78, b]);
+        let page = json!({ "id": "p1", "title": "", "level": 1, "outlines": [], "images": [{ "id": "i", "src": "notecraft-blob:kpage" }] });
+        s.save(SaveChanges {
+            library: Some(json!({ "notebooks": ["n1"], "templates": [{ "page": { "images": [{ "src": "notecraft-blob:ktpl" }] } }] })),
+            notebooks: vec![json!({ "id": "n1", "sections": [{ "id": "s1", "pages": [page_stub(&page)] }] })],
+            pages: vec![page],
+            blobs: HashMap::from([("kpage".into(), url(1)), ("ktpl".into(), url(2)), ("kgone".into(), url(3)), ("kver".into(), url(4))]),
+            ..Default::default()
+        })
+        .unwrap();
+        s.commit_versions(VersionChanges { put: vec![json!({ "id": "v1", "pageId": "p1", "at": "x", "page": { "images": [{ "src": "notecraft-blob:kver" }] } })], ..Default::default() }).unwrap();
+        assert_eq!(s.prune_blobs().unwrap(), ["kgone"]);
+        assert!(s.has_blob("kpage") && s.has_blob("ktpl") && s.has_blob("kver") && !s.has_blob("kgone"));
+        // Once the version goes, so does its picture.
+        s.commit_versions(VersionChanges { delete: vec!["v1".into()], ..Default::default() }).unwrap();
+        assert_eq!(s.prune_blobs().unwrap(), ["kver"]);
     }
 }

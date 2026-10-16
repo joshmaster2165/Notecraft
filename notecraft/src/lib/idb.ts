@@ -55,6 +55,16 @@ export async function getAllByIndex<T>(store: string, index: string, key: IDBVal
   return done(db.transaction(store).objectStore(store).index(index).getAll(key)) as Promise<T[]>;
 }
 
+export async function getAll<T>(store: string): Promise<T[]> {
+  const db = await openDb();
+  return done(db.transaction(store).objectStore(store).getAll()) as Promise<T[]>;
+}
+
+export async function getAllKeys(store: string): Promise<IDBValidKey[]> {
+  const db = await openDb();
+  return done(db.transaction(store).objectStore(store).getAllKeys()) as Promise<IDBValidKey[]>;
+}
+
 /** Write several records and deletions across stores in one transaction. */
 export async function batch(stores: string[], fn: (tx: IDBTransaction) => void): Promise<void> {
   const db = await openDb();

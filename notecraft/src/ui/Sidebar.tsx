@@ -3,10 +3,12 @@ import { useEffect, useRef, useState, type DragEvent } from "react";
 import type { Notebook, Section, SectionGroup } from "../model/types.ts";
 import * as ops from "../model/ops.ts";
 import { store, useStore } from "../store/store.ts";
-import { deleteSection, exportNotebook, importFiles, importNotebookFolder, importOneNoteFolder, newNotebook, newSection, newSectionGroup, selectNotebook, selectSection } from "../store/actions.ts";
+import { deleteSection, exportNotebook, exportOneNoteSection, exportWord, importFiles, importNotebookFolder, importOneNoteFolder, newNotebook, newSection, newSectionGroup, selectNotebook, selectSection } from "../store/actions.ts";
 import { Icon, Logo } from "./icons.tsx";
 import { desktop } from "../desktop.ts";
 import { copySectionLink } from "../store/links.ts";
+import { lockState, useLockVersion } from "../store/locks.ts";
+import { SectionLockItems } from "./LockViews.tsx";
 
 function InlineRename({ value, onDone }: { value: string; onDone: (v: string | null) => void }) {
   const ref = useRef<HTMLInputElement>(null);
@@ -34,6 +36,11 @@ function SectionMenu({ section, onClose, onRename }: { section: Section; onClose
       <button role="menuitem" onClick={() => (onRename(), onClose())}>Rename</button>
       <button role="menuitem" onClick={() => (store.setUi({ dialog: { kind: "moveSection", sectionId: section.id } }), onClose())}>Move to…</button>
       <button role="menuitem" onClick={() => (void copySectionLink(section.id), onClose())}>Copy link to section</button>
+      <hr />
+      <SectionLockItems section={section} onClose={onClose} />
+      <hr />
+      <button role="menuitem" onClick={() => (void exportWord("section", section.id), onClose())}>Export as Word document…</button>
+      <button role="menuitem" onClick={() => (void exportOneNoteSection(section.id), onClose())}>Export as OneNote section (.one)…</button>
       <div className="menu-swatches" role="group" aria-label="Section color">
         {ops.SECTION_COLORS.map((c) => (
           <button
@@ -72,6 +79,7 @@ interface TreeProps {
 function SectionTree(props: TreeProps) {
   const { notebook, sectionId, renaming, setRenaming, menuFor, setMenuFor, depth, groupId } = props;
   const [over, setOver] = useState<string | null>(null);
+  useLockVersion();
   const known = new Set((notebook.groups ?? []).map((g) => g.id));
   const sections = notebook.sections.filter((s) => (groupId ? s.groupId === groupId : !s.groupId || !known.has(s.groupId)));
   const groups = (notebook.groups ?? []).filter((g) => (groupId ? g.parentId === groupId : !g.parentId || !known.has(g.parentId)));
@@ -104,7 +112,13 @@ function SectionTree(props: TreeProps) {
             ) : (
               <span className="section-name">{s.name}</span>
             )}
-            <span className="section-count">{s.pages.length}</span>
+            {s.locked ? (
+              <span className="section-count section-lock" title={lockState(s) === "locked" ? "Password protected (locked)" : "Password protected (unlocked)"}>
+                {lockState(s) === "locked" ? <Icon.lock width={14} height={14} /> : <Icon.unlock width={14} height={14} />}
+              </span>
+            ) : (
+              <span className="section-count">{s.pages.length}</span>
+            )}
           </button>
           <button className="icon-btn section-more" aria-label={`${s.name} options`} onClick={() => setMenuFor(menuFor === s.id ? null : s.id)}>
             <Icon.more />

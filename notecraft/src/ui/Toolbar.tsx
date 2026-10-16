@@ -8,7 +8,8 @@ import * as ops from "../model/ops.ts";
 import { TAGS, customTags } from "../model/tags.ts";
 import { MAX_ZOOM, MIN_ZOOM } from "@re/canvas/viewport.ts";
 import { store, useStore, type DrawTool, type ShapeKind } from "../store/store.ts";
-import { currentPage, exportPageMarkdown, insertAttachments, insertImageFiles, printPage } from "../store/actions.ts";
+import { convertInkToShapes, currentPage, exportPageMarkdown, exportWord, insertAttachments, insertEquation, insertImageFiles, insertPrintout, printPage } from "../store/actions.ts";
+import { lockAll } from "../store/locks.ts";
 import { persistSelection } from "../store/persist.ts";
 import { canvasApi, useZoom } from "./canvasApi.ts";
 import { promptLink } from "./editor/Paragraph.tsx";
@@ -202,6 +203,7 @@ export function Toolbar() {
   const zoom = useZoom();
   const imageInput = useRef<HTMLInputElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const pdfInput = useRef<HTMLInputElement>(null);
 
   const editActive = (fn: (d: Draft<Library>) => unknown) => {
     if (active) store.edit(fn);
@@ -279,6 +281,9 @@ export function Toolbar() {
               <button disabled={!pageId || el?.kind !== "text"} onClick={() => (pageId && active && void copyParagraphLink(pageId, active.elementId), close())}>Copy link to paragraph</button>
               <button onClick={() => (printPage(), close())}>Print or save as PDF…</button>
               <button onClick={() => (exportPageMarkdown(), close())}>Export page as Markdown</button>
+              <button disabled={!pageId} onClick={() => (void exportWord("page"), close())}>Export page as Word document</button>
+              <hr />
+              <button onClick={() => (void lockAll().then((n) => store.toast(n ? `Locked ${n} section${n === 1 ? "" : "s"}` : "No unlocked sections to lock")), close())}>Lock all protected sections</button>
             </>
           )}
         </Menu>
@@ -434,10 +439,17 @@ export function Toolbar() {
               <Btn label="Link" kbd="⌘K" wide disabled={el?.kind !== "text"} onClick={() => void promptLink()}><span className="tb-labeled"><Icon.link /> Link</span></Btn>
             </div>
             <div className="tb-group">
+              <Btn label="File Printout: insert each page of a PDF as a picture" wide disabled={!page} onClick={() => pdfInput.current?.click()}><span className="tb-labeled"><Icon.printout /> File Printout</span></Btn>
+              <Btn label="Equation" wide disabled={!page} onClick={() => { const t = filesTarget(); if (t) insertEquation(t); }}><span className="tb-labeled"><Icon.equation /> Equation</span></Btn>
+            </div>
+            <div className="tb-group">
               {recording ? (
-                <Btn label="Stop recording" wide on onClick={stopRecording}><span className="tb-labeled"><i className="rec-dot" /> Stop <RecordingClock since={recording} /></span></Btn>
+                <Btn label="Stop recording" wide on onClick={stopRecording}><span className="tb-labeled"><i className="rec-dot" /> Stop {recording.kind === "video" ? "video" : "audio"} <RecordingClock since={recording.since} /></span></Btn>
               ) : (
-                <Btn label="Record audio" wide disabled={!page} onClick={() => { const t = filesTarget(); if (t) void startRecording(t); }}><span className="tb-labeled"><Icon.mic /> Record audio</span></Btn>
+                <>
+                  <Btn label="Record audio" wide disabled={!page} onClick={() => { const t = filesTarget(); if (t) void startRecording(t, "audio"); }}><span className="tb-labeled"><Icon.mic /> Record audio</span></Btn>
+                  <Btn label="Record video" wide disabled={!page} onClick={() => { const t = filesTarget(); if (t) void startRecording(t, "video"); }}><span className="tb-labeled"><Icon.video /> Record video</span></Btn>
+                </>
               )}
             </div>
             <div className="tb-group">
@@ -464,6 +476,15 @@ export function Toolbar() {
               <Btn label="Eraser" on={draw.tool === "eraser"} onClick={() => pickTool("eraser")}><Icon.eraser /></Btn>
               <Btn label="Lasso select" on={draw.tool === "lasso"} onClick={() => pickTool("lasso")}><Icon.lasso /></Btn>
               <Btn label="Ink to Text (AI): the lassoed ink, or all handwriting on the page" wide disabled={!page?.ink?.length} onClick={() => void runInkToText()}><span className="tb-labeled"><Icon.text /> Ink to Text</span></Btn>
+              <Btn label="Ink to Shape: turn hand-drawn lines, arrows and shapes into clean ones as you draw" on={draw.inkToShape} wide onClick={() => setDraw({ inkToShape: !draw.inkToShape, ...(draw.tool === "type" || draw.tool === "eraser" || draw.tool === "lasso" ? { tool: "pen" } : {}) })}><span className="tb-labeled"><Icon.inkShape /> Ink to Shape</span></Btn>
+              <Menu label="More Ink to Shape" button={<Icon.chevron width={12} height={12} />}>
+                {(close) => (
+                  <>
+                    <button disabled={!page?.ink?.length} onClick={() => (page && void convertInkToShapes(page.id, inkSelection.pageId === page.id ? inkSelection.ids : []), close())}>Convert lassoed ink to shapes</button>
+                    <p className="menu-note">Select strokes with Lasso Select first.</p>
+                  </>
+                )}
+              </Menu>
               <Menu label="Shapes" button={<span className={`tb-labeled${draw.tool === "shape" ? " is-on" : ""}`}><Icon.shapes /></span>}>
                 {(close) => SHAPES.map(([v, name, glyph]) => (
                   <button key={v} role="menuitemradio" aria-checked={draw.tool === "shape" && draw.shape === v} onClick={() => (setDraw({ tool: "shape", shape: v }), close())}>
@@ -544,6 +565,12 @@ export function Toolbar() {
           const t = filesTarget();
           if (t && files.length) insertImageFiles(files, t);
         }} />
+        <input ref={pdfInput} type="file" accept="application/pdf,.pdf" hidden onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          const t = filesTarget();
+          if (t && file) void insertPrintout(file, t);
+        }} />
         <input ref={fileInput} type="file" multiple hidden onChange={(e) => {
           const files = Array.from(e.target.files ?? []);
           e.target.value = "";
@@ -596,7 +623,7 @@ const SHAPES: [ShapeKind, string, string][] = [["line", "Line", "╱"], ["arrow"
 
 const DRAW_HINTS: Record<DrawTool, string> = {
   type: "Pick a pen to draw on the page.",
-  pen: "Draw anywhere on the page. Two-finger scroll still pans.",
+  pen: "Draw anywhere on the page. Two-finger scroll still pans. With Ink to Shape on, lines and shapes snap clean.",
   highlighter: "Draw anywhere on the page. Two-finger scroll still pans.",
   eraser: "Drag across strokes to erase them.",
   lasso: "Draw a loop around ink to select it, then drag to move or press Delete.",

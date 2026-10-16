@@ -1,21 +1,21 @@
 {
   "name": "notecraft",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5190",
     "build": "tsc -p tsconfig.json --noEmit && vite build",
     "preview": "vite preview --host 127.0.0.1 --port 5191",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --test src/model/ops.test.ts src/model/versions.test.ts src/model/notebookImport.test.ts src/store/diskSync.test.ts",
+    "test": "node --test src/model/ops.test.ts src/model/versions.test.ts src/model/notebookImport.test.ts src/model/importOne.test.ts src/store/diskSync.test.ts src/store/locks.test.ts",
     "desktop": "tauri dev",
     "dist": "tauri build",
     "build:sidecar": "node scripts/sidecar.mjs",
     "tauri": "tauri",
     "desktop:build": "tauri build",
-    "test:rust": "cargo test -p notecraft-core -p notecraft-cli -p onenote-re",
-    "build:wasm": "cargo build -p onenote-re --lib --release --target wasm32-unknown-unknown --features wasm && wasm-bindgen --target web --out-dir src/wasm/onenote_re ../target/wasm32-unknown-unknown/release/onenote_re.wasm"
+    "test:rust": "cargo test -p onenote-re -p onenote-writer -p notecraft-core -p notecraft-cli -p notecraft-engine",
+    "build:wasm": "cargo build -p onenote-re -p notecraft-engine --lib --release --target wasm32-unknown-unknown --features onenote-re/wasm,notecraft-engine/wasm && wasm-bindgen --target web --out-dir src/wasm/onenote_re ../target/wasm32-unknown-unknown/release/onenote_re.wasm && wasm-bindgen --target web --out-dir src/wasm/engine ../target/wasm32-unknown-unknown/release/notecraft_engine.wasm"
   },
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",

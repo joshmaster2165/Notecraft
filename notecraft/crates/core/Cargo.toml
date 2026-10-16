@@ -1,6 +1,6 @@
 [package]
 name = "notecraft-core"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "Notecraft's library on disk: storage, search and page editing shared by the desktop app, the CLI and the MCP server"
 repository = "https://github.com/joshmaster2165/Notecraft"

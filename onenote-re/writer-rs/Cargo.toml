@@ -1,0 +1,24 @@
+[package]
+name = "onenote-writer"
+version = "0.1.0"
+edition = "2021"
+description = "Writes Notecraft sections as OneNote 2010+ .one files ([MS-ONESTORE] revision store, [MS-ONE] object model)"
+repository = "https://github.com/joshmaster2165/Notecraft"
+publish = false
+
+[lib]
+name = "onenote_writer"
+
+# Pure computation only: no filesystem, clock, randomness or threads, so the
+# crate builds unchanged for wasm32-unknown-unknown.
+[dependencies]
+serde_json = "1"
+base64 = "0.22"
+sha1 = { version = "0.11", default-features = false }
+md-5 = { version = "0.11", default-features = false }
+
+[dev-dependencies]
+onenote-re = { path = "../parser-rs" }
+onenote_parser = "2.0.0"
+typed-path = "0.12"
+serde_json = "1"

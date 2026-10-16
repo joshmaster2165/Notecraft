@@ -7,7 +7,7 @@
   <a href="https://github.com/joshmaster2165/Notecraft/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/joshmaster2165/Notecraft/ci.yml?branch=main&label=tests"></a>
   <img alt="macOS, Windows, Linux" src="https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Windows%20%C2%B7%20Linux%20%C2%B7%20web-2f6fb3">
   <img alt="Rust and Tauri" src="https://img.shields.io/badge/built%20with-Rust%20%C2%B7%20Tauri%20%C2%B7%20React-b7410e">
-  <a href="notecraft/docs/PARITY.md"><img alt="OneNote parity: 56 of 67 features" src="https://img.shields.io/badge/OneNote%20parity-56%2F67-f4b860"></a>
+  <a href="notecraft/docs/PARITY.md"><img alt="OneNote parity: 61 of 67 features" src="https://img.shields.io/badge/OneNote%20parity-61%2F67-f4b860"></a>
 </p>
 
 <p align="center">
@@ -68,8 +68,9 @@ app at `http://127.0.0.1:5190`.
 
 **Write anywhere on the page.** Containers you can drag and resize, rich text,
 headings, Citation and Code styles, paragraph and line spacing, bullet and
-numbering libraries, tables with shading and sorting, pictures with alt text
-and rotation, file attachments and audio recordings.
+numbering libraries, tables with shading and sorting, pictures with alt text,
+rotation and crop, file attachments, **File Printouts** of PDFs, **equations**
+(UnicodeMath or LaTeX), and audio and video recordings.
 
 **Paste that keeps its shape.** Text from the web or Word keeps its bold,
 italics, links, colors, headings and nested lists. <kbd>⌥⇧⌘V</kbd> pastes
@@ -78,6 +79,10 @@ plain text.
 **Organize like OneNote.** Notebooks, color-coded sections, nested section
 groups, three levels of subpages, page templates, move and copy, and Deleted
 Notes for 60 days.
+
+**Password-protected sections.** Lock a section with a password: its pages
+are stored only encrypted (AES-256-GCM), and it locks itself after 10 minutes
+away or with **Lock All** (<kbd>⌘⌥L</kbd>).
 
 </td>
 <td width="50%" valign="top">
@@ -103,7 +108,7 @@ and restore it in one step. OneNote's own history comes along on import.
 </tr>
 <tr>
 <td><b>Find Tags.</b> Every tagged note in one list, grouped by tag; check items off where they live.</td>
-<td><b>Draw.</b> Pen, highlighter, shapes, lasso select and eraser, on plain, ruled or grid paper. Ink is stored in page points, so it stays on its text at every zoom.</td>
+<td><b>Draw.</b> Pen, highlighter, shapes, <b>Ink to Shape</b>, lasso select and eraser, on plain, ruled or grid paper. Ink is stored in page points, so it stays on its text at every zoom.</td>
 </tr>
 <tr>
 <td width="50%"><img src="docs/images/search.png" alt="Search panel with results across pages and scope chips"></td>
@@ -117,15 +122,16 @@ OneNote's own increments and limits (25–500%), and each page reopens where
 you left it.
 
 **Desktop app** for macOS, Windows and Linux with native menus, plus print
-and export to PDF, Markdown or a portable `.notecraft.json`.
+and export to PDF, Word (`.docx`, with real equations), OneNote (`.one`),
+Markdown or a portable `.notecraft.json`.
 
 </td>
 </tr>
 </table>
 
 The feature-by-feature comparison with OneNote, including what's still
-missing, is in **[PARITY.md](notecraft/docs/PARITY.md)**: 56 of 67 features
-done, 3 partial.
+missing, is in **[PARITY.md](notecraft/docs/PARITY.md)**: 61 of 67 features
+done, 2 partial.
 
 ## Import your OneNote notebooks
 
@@ -141,7 +147,8 @@ done, 3 partial.
 
 Parsing happens on your machine; nothing is uploaded. Tags (including your
 custom ones), tables, pictures, ink, links, alignment, spacing and fonts come
-across. Password-protected sections are detected but not yet decrypted.
+across. OneNote's password-protected sections are detected but not opened:
+unlock them in OneNote, then import them again.
 
 ## AI and agents
 
@@ -183,6 +190,7 @@ flowchart LR
   one[".one / .onetoc2"] --> parser["onenote-re parser<br/>(Rust; WebAssembly in the browser)"]
   parser --> importer["importer"]
   importer --> ui["React app"]
+  ui <--> engine["notecraft-engine<br/>(Rust; WebAssembly in the browser)"]
   ui <--> shell["Tauri shell (Rust)<br/>menus · keychain · AI requests"]
   shell <--> core[("notecraft-core<br/>library folder")]
   cli["notecraft CLI · MCP server"] <--> core
@@ -193,8 +201,8 @@ flowchart LR
 |---|---|
 | [`notecraft/`](notecraft/) | The app: React 19 + Vite. Its README maps each feature to the OneNote structure it follows. |
 | [`notecraft/src-tauri/`](notecraft/src-tauri) | The desktop shell (Tauri 2, Rust): window and menus, library folder, OneNote import, keychain, AI requests. |
-| [`notecraft/crates/`](notecraft/crates) | `notecraft-core` (the library-folder format, search, editing) and `notecraft` (CLI and MCP server). |
-| [`onenote-re/`](onenote-re/) | The research: the `.one` parser in Rust ([`parser-rs`](onenote-re/parser-rs)) and its TypeScript reference, the reconstructed pan and zoom canvas, and notes on [the file format](onenote-re/docs/file-format.md) and [the canvas](onenote-re/docs/canvas.md). |
+| [`notecraft/crates/`](notecraft/crates) | `notecraft-core` (the library-folder format, search, editing), `notecraft` (CLI and MCP server) and `notecraft-engine` (picture crop, PDF printouts, Ink to Shape, equations, Word export and section locks; native in the desktop app, WebAssembly in the browser). |
+| [`onenote-re/`](onenote-re/) | The research: the `.one` parser in Rust ([`parser-rs`](onenote-re/parser-rs)) and its TypeScript reference, the `.one` writer ([`writer-rs`](onenote-re/writer-rs)), the reconstructed pan and zoom canvas, and notes on [the file format](onenote-re/docs/file-format.md) and [the canvas](onenote-re/docs/canvas.md). |
 
 ### Develop
 

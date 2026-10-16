@@ -6,7 +6,10 @@
 // declarations and global id tables, property sets with every value type, and
 // file data store objects. Content covers every converter path: pages with
 // metadata and versions, outlines, rich text with runs/hyperlinks/styles, lists,
-// note tags, tables, images and attachments with bytes, ink, unknown objects.
+// note tags, tables, images and attachments with bytes, ink, unknown objects,
+// and the file-format.md §15 properties: crop, printouts, Ink to Shape,
+// equations (MathData_* and structure characters), media signatures,
+// recordings, embeds and password-protected (encrypted) sections.
 //
 // Values are random and often hostile (NaN, odd byte counts, lone surrogates,
 // out-of-range run offsets...): the output is only meant to be read, by both
@@ -564,6 +567,11 @@ function text(rng, n = 1 + rng.int(6)) {
 
 const strOpts = (rng) => ({ nul: rng.chance(0.3), bom: rng.chance(0.05), odd: rng.chance(0.03) });
 
+/** Equation text with RichEdit's structure characters (start U+FDD0, separator U+FDEE, end U+FDEF). */
+function equation(rng) {
+  return rng.pick(["x=", "\ufdd0a\ufdeeb\ufdef", "\ufdd0\ufdd0x\ufdee2\ufdef+1\ufdee\ufdef", "\ufdee\ufdef", "\u2211\ufdd0i=1\ufdeen\ufdeei\ufdef", "\ufdd0"]);
+}
+
 function float(rng) {
   const r = rng.next();
   if (r < 0.03) return NaN;
@@ -609,6 +617,48 @@ function styleProps(rng) {
     ...maybe(rng, 0.3, () => (rng.chance(0.8) ? V.u16(P.LanguageID, rng.int(0x10000)) : V.u8(P.LanguageID, rng.int(256)))),
     ...maybe(rng, 0.2, () => V.str(P.ParagraphStyleId, rng.pick(["p", "h1", "h2", "code"]))),
     ...maybe(rng, 0.2, () => V.bool(P.Hyperlink, rng.chance(0.8))),
+    ...maybe(rng, 0.15, () => V.bool(P.MathOrdinary, rng.chance(0.7))),
+    ...maybe(rng, 0.15, () => V.bool(P.MathNoBuildup, rng.chance(0.7))),
+    ...(rng.chance(0.25) ? mathData(rng) : maybe(rng, 0.2, () => V.u8(P.MathData_Align, 0))),
+  ];
+}
+
+/** MathData_* as on a math object's start delimiter (and odd widths). */
+function mathData(rng) {
+  const n = (id, max) => rng.pick([() => V.u32(id, rng.int(max)), () => V.u16(id, rng.int(max)), () => V.u8(id, rng.int(max)), () => V.bytes(id, rng.bytes(3))])();
+  return [
+    ...maybe(rng, 0.9, () => n(P.MathData_Type, 40)),
+    ...maybe(rng, 0.7, () => n(P.MathData_cArg, 6)),
+    ...maybe(rng, 0.3, () => V.u8(P.MathData_cCol, rng.int(4))),
+    ...maybe(rng, 0.4, () => V.u8(P.MathData_Align, rng.int(3))),
+    ...maybe(rng, 0.5, () => V.u16(P.MathData_Char, rng.pick([0x2211, 0x222b, 0x28, 0x5b, 0x302, 0]))),
+    ...maybe(rng, 0.3, () => V.u16(P.MathData_Char1, rng.pick([0x29, 0x5d, 0]))),
+    ...maybe(rng, 0.3, () => V.u16(P.MathData_Char2, rng.pick([0x2502, 0x2c]))),
+    ...maybe(rng, 0.2, () => V.u8(P.MathData_TeXStyle, rng.int(4))),
+    ...maybe(rng, 0.2, () => V.u8(P.MathData_FontAlign, rng.int(4))),
+  ];
+}
+
+/** Picture › Crop in either property family: fractions, percentages, partial, hostile. */
+function crop(rng) {
+  const fam = rng.chance(0.6)
+    ? ["ImageCroppedTopLeftXPercentage", "ImageCroppedTopLeftYPercentage", "ImageCroppedWidthPercentage", "ImageCroppedHeightPercentage", "ImageCroppingActive"]
+    : ["Deprecated_ImageCroppedTopLeftXPercentage", "Deprecated_ImageCroppedTopLeftYPercentage", "Deprecated_ImageCroppedWidthPercentage", "Deprecated_ImageCroppedHeightPercentage", "Deprecated_ImageCroppingActive"];
+  const unit = rng.chance(0.75) ? 1 : 100;
+  const value = (full) => {
+    const r = rng.next();
+    if (r < 0.04) return NaN;
+    if (r < 0.06) return -0.1 * unit;
+    if (r < 0.08) return 1.5 * unit;
+    if (r < 0.15) return full;
+    return rng.next() * unit * 0.6;
+  };
+  return [
+    ...maybe(rng, 0.85, () => V.f32(P[fam[0]], value(0))),
+    ...maybe(rng, 0.85, () => V.f32(P[fam[1]], value(0))),
+    ...maybe(rng, 0.85, () => V.f32(P[fam[2]], value(unit))),
+    ...maybe(rng, 0.85, () => (rng.chance(0.9) ? V.f32(P[fam[3]], value(unit)) : V.u16(P[fam[3]], 7))),
+    ...maybe(rng, 0.3, () => V.bool(P[fam[4]], rng.chance(0.5))),
   ];
 }
 
@@ -626,7 +676,7 @@ class Section {
     const nRuns = 1 + rng.int(4);
     for (let i = 0; i < nRuns; i++) {
       if (rng.chance(0.25)) s += `\ufddfHYPERLINK "${rng.pick(["https://example.com/", "mailto:x@example.com", "onenote:#p", ""])}${rng.chance(0.1) ? "" : '"'}`;
-      s += text(rng, 1 + rng.int(3));
+      s += rng.chance(0.15) ? equation(rng) : text(rng, 1 + rng.int(3));
       ends.push(rng.chance(0.1) ? rng.int(s.length + 5) : s.length);
     }
     if (rng.chance(0.1)) ends.reverse();
@@ -664,10 +714,15 @@ class Section {
   fileContainer(rev, jcid) {
     const { rng, b } = this;
     const r = rng.next();
-    const ext = rng.pick([".png", ".pdf", "", "bin", ".JPG"]);
+    const ext = rng.pick([".png", ".pdf", "", "bin", ".JPG", ".m4a", ".WMA", "wmv", ".mp4"]);
     if (r < 0.55) {
-      const sigs = [[0x89, 0x50, 0x4e, 0x47], [0xff, 0xd8, 0xff], [0x47, 0x49, 0x46, 0x38], [0x42, 0x4d], [0x25, 0x50, 0x44, 0x46], [0x50, 0x4b, 0x03, 0x04], [0x49, 0x49, 0x2a, 0x00], [0xd7, 0xcd, 0xc6, 0x9a], [1, 2, 3]];
-      const bytes = Uint8Array.from([...rng.pick(sigs), ...rng.bytes(rng.int(64))]);
+      const ascii = (t) => [...t].map((c) => c.charCodeAt(0));
+      const sigs = [[0x89, 0x50, 0x4e, 0x47], [0xff, 0xd8, 0xff], [0x47, 0x49, 0x46, 0x38], [0x42, 0x4d], [0x25, 0x50, 0x44, 0x46], [0x50, 0x4b, 0x03, 0x04], [0x49, 0x49, 0x2a, 0x00], [0xd7, 0xcd, 0xc6, 0x9a], [1, 2, 3],
+        // Media (file-format.md §15.6).
+        [0, 0, 0, 0x20, ...ascii(rng.pick(["ftypM4A ", "ftypM4B ", "ftypqt  ", "ftyp3gp4", "ftyp3g2a", "ftypisom", "ftypmp42", "ftyp"]))],
+        ascii(rng.pick(["RIFF\0\0\0\0WAVE", "RIFF\0\0\0\0AVI ", "RIFF\0\0\0\0WA", "ID3", "OggS", "fLaC", "caff", "#!AMR"])),
+        [0x1a, 0x45, 0xdf, 0xa3], [0x30, 0x26, 0xb2, 0x75, 0x8e, 0x66, 0xcf, 0x11], [0xff, 0xf1], [0xff, 0xf9], [0xff, 0xfb], [0xff, 0xe3], [0xff]];
+      const bytes = Uint8Array.from([...rng.pick(sigs), ...rng.bytes(rng.chance(0.2) ? 0 : rng.int(64))]);
       if (bytes.length >= 10 && rng.chance(0.1)) bytes.set([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45], 0);
       if (bytes.length >= 42 && rng.chance(0.1)) bytes.set([1, 0, 0, 0], 0), bytes.set([0x20, 0x45], 40);
       const guid = b.addFileData(bytes);
@@ -692,6 +747,15 @@ class Section {
       ...maybe(rng, 0.2, () => V.str(P.WzHyperlinkUrl, "https://example.com/img")),
       ...maybe(rng, 0.2, () => V.bool(P.IsBackground, rng.chance(0.5))),
       ...maybe(rng, 0.3, () => V.str(P.RichEditTextUnicode, rng.chance(0.3) ? "" : text(rng))),
+      ...(rng.chance(0.3) ? crop(rng) : []),
+      ...maybe(rng, 0.2, () => V.bool(P.IsPrintoutPage, rng.chance(0.8))),
+      ...maybe(rng, 0.1, () => V.bool(P.IsPartOfSplitPrintout, rng.chance(0.7))),
+      ...maybe(rng, 0.1, () => V.bool(P.PrintoutOutOfDate, rng.chance(0.7))),
+      ...maybe(rng, 0.2, () => V.u32(P.OriginalPageNumber, rng.pick([0, 1, 2, 17]))),
+      ...maybe(rng, 0.1, () => V.u32(P.DisplayedPageNumber, rng.int(5))),
+      ...maybe(rng, 0.06, () => V.str(P.IFrameOriginUrl, "https://example.com/video")),
+      ...maybe(rng, 0.06, () => V.u32(P.IFrameMediaType, rng.int(4))),
+      ...maybe(rng, 0.06, () => V.str(P.IFrameContentTitle, text(rng))),
     ]);
   }
 
@@ -703,6 +767,9 @@ class Section {
       ...maybe(rng, 0.7, () => V.str(P.EmbeddedFileName, "report.pdf", strOpts(rng))),
       ...maybe(rng, 0.5, () => V.str(P.SourceFilepath, "C:\\files\\report.pdf")),
       ...maybe(rng, 0.3, () => V.bytes(P.UnverifiedHash, rng.bytes(20))),
+      ...maybe(rng, 0.15, () => V.u32(P.IRecordMedia, rng.int(3))),
+      ...maybe(rng, 0.1, () => V.u32(P.AudioRecordingDuration, rng.int(600_000))),
+      ...maybe(rng, 0.1, () => V.bool(P.PrintoutOutOfDate, rng.chance(0.7))),
     ]);
   }
 
@@ -747,6 +814,7 @@ class Section {
         ...maybe(rng, 0.95, () => V.bytes(P.InkPath, this.inkPath(1 + rng.int(6), Math.max(2, dimList.length)))),
         ...maybe(rng, 0.9, () => V.oids(P.InkStrokeProperties, [sp])),
         ...maybe(rng, 0.5, () => V.u8(P.InkBias, rng.int(4))),
+        ...(rng.chance(0.2) ? this.inkShapeProps() : []),
       ]);
     });
     const box = new Bytes();
@@ -754,6 +822,7 @@ class Section {
     const dataProps = [
       ...maybe(rng, 0.7, () => V.bytes(P.InkBoundingBox, box.done())),
       V.oids(P.InkStrokes, strokes),
+      ...(rng.chance(0.1) ? this.inkShapeProps() : []),
     ];
     const inline = rng.chance(0.2);
     const data = inline ? null : b.object(rev, J.InkDataNode, dataProps);
@@ -764,7 +833,20 @@ class Section {
       ...maybe(rng, 0.5, () => V.f32(P.InkScalingY, 0.5 + rng.next())),
       ...(inline ? dataProps : [V.oids(P.InkData, [data])]),
       ...maybe(rng, children.length ? 1 : 0, () => V.oids(P.ContentChildNodes, children)),
+      ...(rng.chance(0.1) ? this.inkShapeProps() : []),
     ]);
+  }
+
+  /** Ink to Shape: InkShape2DInfo / InkLineShapeInfo blobs (some over 256 bytes) and their proxies. */
+  inkShapeProps() {
+    const { rng } = this;
+    const blob = () => rng.bytes(rng.chance(0.1) ? 300 + rng.int(100) : rng.int(80));
+    return [
+      ...maybe(rng, 0.6, () => V.bytes(P.InkShape2DInfo, blob())),
+      ...maybe(rng, 0.5, () => V.u32(P.InkShape2DInfoModifiedProxy, rng.int(1000))),
+      ...maybe(rng, 0.5, () => V.bytes(P.InkLineShapeInfo, blob())),
+      ...maybe(rng, 0.4, () => (rng.chance(0.8) ? V.u32(P.InkLineShapeInfoModifiedProxy, rng.int(1000)) : V.bool(P.InkLineShapeInfoModifiedProxy, true))),
+    ];
   }
 
   unknown(rev) {
@@ -790,6 +872,9 @@ class Section {
       V.sets(0x2010, []),
       V.u32(P.PageWidth, 1),
       V.u32(P.PageWidth, 2),
+      V.str(P.IFrameOriginUrl, "https://example.com/embed"),
+      V.str(P.IFrameContentTitle, text(rng)),
+      V.u32(P.IFrameMediaType, rng.int(3)),
     ].filter(() => rng.chance(0.7));
     return b.object(rev, rng.pick([J.MathNode, 0x00060099, J.TitleNode]), props);
   }
@@ -893,7 +978,12 @@ class Section {
     if (rng.chance(0.8)) {
       titles.push(
         b.object(rev, J.TitleNode, [
-          V.oids(P.ElementChildNodes, [this.outline(rev, tagDefs, "IsTitleText"), ...maybe(rng, 0.5, () => this.outline(rev, tagDefs, "IsTitleDate")), ...maybe(rng, 0.2, () => this.image(rev))]),
+          V.oids(P.ElementChildNodes, [
+            ...maybe(rng, 0.8, () => this.outline(rev, tagDefs, "IsTitleText")),
+            ...maybe(rng, 0.5, () => this.outline(rev, tagDefs, "IsTitleDate")),
+            ...maybe(rng, 0.3, () => this.outline(rev, tagDefs, "IsTitleTime")),
+            ...maybe(rng, 0.2, () => this.image(rev)),
+          ]),
         ]),
       );
     }
@@ -992,13 +1082,25 @@ class Section {
       ...maybe(rng, 0.7, () => V.str(P.NotebookManagementEntityGuid, guidString(rng.bytes(16)))),
       ...maybe(rng, 0.7, () => V.u64(P.TopologyCreationTimeStamp, fileTime(rng))),
       ...maybe(rng, 0.7, () => V.u32(P.NotebookColor, color(rng))),
+      ...maybe(rng, 0.1, () => V.u32(P.Deprecated_SectionColor, color(rng))),
       V.oids(P.ElementChildNodes, [series, ...maybe(rng, 0.2, () => UNRESOLVED)]),
+      ...maybe(rng, 0.05, () => V.bool(P.IsEncrypted, rng.chance(0.7))),
+      ...maybe(rng, 0.05, () => V.bool(P.IsSomeEncryptedContentUnavailable, rng.chance(0.7))),
     ]);
     rev.roots.push([1, section]);
     if (rng.chance(0.6)) {
       const meta = b.revision(root, { role: 2 });
-      meta.roots.push([2, b.object(meta, J.SectionMetaData, [V.str(P.SectionDisplayName, rng.chance(0.2) ? "" : text(rng), strOpts(rng))])]);
+      meta.roots.push([2, b.object(meta, J.SectionMetaData, [
+        V.str(P.SectionDisplayName, rng.chance(0.2) ? "" : text(rng), strOpts(rng)),
+        ...maybe(rng, 0.05, () => V.bool(P.IsEncrypted, true)),
+        // OneNote keeps the section color here, not on the section node.
+        ...maybe(rng, 0.7, () => V.u32(P.NotebookColor, color(rng))),
+        ...maybe(rng, 0.1, () => V.u32(P.Deprecated_SectionColor, color(rng))),
+      ])]);
     }
+    // A password-protected section whose own object space is encrypted (decided
+    // last: the first draws of the small seeds the tests use are all small).
+    root.encrypted = rng.chance(0.04);
   }
 }
 
@@ -1065,3 +1167,6 @@ export function generateDeep(kind, depth, seed = 1) {
   srev.roots.push([1, b.object(srev, J.SectionNode, [V.oids(P.ElementChildNodes, [series])])]);
   return b.build();
 }
+
+// For hand-built test sections (parser/src/notebook.test.ts).
+export { V, J };
