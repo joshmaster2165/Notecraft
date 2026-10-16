@@ -29,6 +29,7 @@ pub fn install(app: &App<Wry>) -> tauri::Result<()> {
         .item(&item("exportWordPage", "Export Page as Word Document…", None)?)
         .item(&item("exportWordSection", "Export Section as Word Document…", None)?)
         .item(&item("exportOneSection", "Export Section as OneNote Section (.one)…", None)?)
+        .item(&item("exportOneNotebook", "Export Notebook as OneNote Notebook…", None)?)
         .separator()
         .item(&item("lockAll", "Lock All Protected Sections", Some("CmdOrCtrl+Alt+L"))?)
         .separator()

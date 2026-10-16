@@ -22,6 +22,7 @@ use std::collections::{HashMap, HashSet};
 use crate::guid::{ExGuid, Guid};
 use crate::media::FileStore;
 use crate::model::{Element, ElementKind, Outline, Page, Section};
+use crate::paper;
 use crate::propset::{ObjIdx, PropSet};
 use crate::schema::{jcid, prop, SCHEMA_REVISION};
 use crate::space::{role, Space};
@@ -418,7 +419,10 @@ pub(crate) fn write_page(
     let revision_meta = w.add("revision-metadata", "", jcid::REVISION_META_DATA, rm);
 
     let page_node = w.reserve("page", "", jcid::PAGE_NODE);
-    let title = w.title(&page.title);
+    // A hidden title is no title: OneNote's Hide Page Title deletes the
+    // title, date and time, and shows a title only when the page has a
+    // TitleNode.
+    let title = (!page.hide_title).then(|| w.title(&page.title));
     let mut blocks = Vec::new();
     let mut right = 0f64;
     let mut bottom = 0f64;
@@ -440,17 +444,24 @@ pub(crate) fn write_page(
 
     let mut p = PropSet::new();
     w.stamp(&mut p);
-    p.oids(prop::STRUCTURE_ELEMENT_CHILD_NODES, vec![title]);
+    if let Some(title) = title {
+        p.oids(prop::STRUCTURE_ELEMENT_CHILD_NODES, vec![title]);
+    }
     if !blocks.is_empty() {
         p.oids(prop::ELEMENT_CHILD_NODES, blocks);
     }
     // OneNote's default page, grown to the content (at most 22 in).
     let width = (half_inches(right) + 2.0).clamp(20.94, 44.0);
     let height = (half_inches(bottom) + 1.0).clamp(21.75, 44.0);
+    let paper = paper::paper_props(&page.paper, &mut |m| w.ctx.warnings.push(m));
     p.bool(prop::LAYOUT_RESOLVE_CHILD_COLLISIONS, true)
         .bool(prop::PORTRAIT_PAGE, true)
         .f32(prop::PAGE_WIDTH, width)
         .f32(prop::PAGE_HEIGHT, height)
+        .f32(prop::GRID_STEP_X, paper.grid_step)
+        .f32(prop::GRID_STEP_Y, paper.grid_step)
+        .f32(prop::GRID_GRAVITY_X, paper::GRID_GRAVITY)
+        .f32(prop::GRID_GRAVITY_Y, paper::GRID_GRAVITY)
         .f32(prop::PAGE_MARGIN_TOP, 1.0)
         .f32(prop::PAGE_MARGIN_BOTTOM, 1.0)
         .f32(prop::PAGE_MARGIN_LEFT, 2.0)
@@ -459,6 +470,9 @@ pub(crate) fn write_page(
         .f32(prop::PAGE_MARGIN_ORIGIN_Y, 0.4)
         .wz(prop::AUTHOR, &author_name)
         .bool(prop::EDIT_ROOT_RTL, false);
+    for (id, v) in paper.props.0 {
+        p.set(id, v);
+    }
     w.sp.fill(page_node, p);
 
     let mut p = PropSet::new();

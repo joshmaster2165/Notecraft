@@ -18,7 +18,7 @@ import { canvasApi } from "./canvasApi.ts";
 import { mod } from "./editor/Paragraph.tsx";
 import { desktop } from "../desktop.ts";
 import * as ops from "../model/ops.ts";
-import { currentPage, exportNotebook, exportOneNoteSection, exportPageMarkdown, exportWord, newNotebook, newPage, newSection, newSectionGroup, printPage } from "../store/actions.ts";
+import { currentPage, exportNotebook, exportOneNoteNotebookFolder, exportOneNoteSection, exportPageMarkdown, exportWord, newNotebook, newPage, newSection, newSectionGroup, printPage } from "../store/actions.ts";
 
 /** Native menu commands (desktop app) mapped onto the same actions as the UI. */
 /** Edit › Paste and Match Style: the clipboard's text, without formatting. */
@@ -50,6 +50,7 @@ function useDesktopCommands() {
       exportWordPage: () => void exportWord("page"),
       exportWordSection: () => void exportWord("section"),
       exportOneSection: () => void exportOneNoteSection(),
+      exportOneNotebook: () => void exportOneNoteNotebookFolder(),
       lockAll: () => void lockAll().then((n) => store.toast(n ? `Locked ${n} section${n === 1 ? "" : "s"}` : "No unlocked sections to lock")),
       print: () => printPage(),
       undo: () => (store.undo(), repairSelection()),

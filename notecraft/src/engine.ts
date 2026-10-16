@@ -37,6 +37,7 @@ interface Wasm {
   to_mathml(linear: string, block: boolean): string;
   export_docx(pagesJson: string): Uint8Array;
   export_one(sectionJson: string, fileName?: string): { bytes: Uint8Array; fileName: string; warnings: string[] };
+  export_one_notebook(notebookJson: string): { bytes: Uint8Array; fileName: string; warnings: string[] };
   protect(plaintext: string, password: string): string;
   unlock(sealed: string, password: string): string;
   reseal(plaintext: string, key: string, like: string): string;
@@ -106,6 +107,23 @@ export async function exportOneNote(section: unknown): Promise<{ saved: string; 
   }
   const out = (await engine()).export_one(JSON.stringify(section));
   const url = URL.createObjectURL(new Blob([out.bytes as BlobPart], { type: "application/onenote" }));
+  Object.assign(document.createElement("a"), { href: url, download: out.fileName }).click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return { saved: out.fileName, warnings: out.warnings };
+}
+
+/**
+ * Export a notebook as a OneNote notebook folder (.onetoc2 + a .one per
+ * section): into a folder you pick (desktop) or as a .zip download
+ * (browser). Resolves to where it went and any warnings, or null if cancelled.
+ */
+export async function exportOneNoteNotebook(notebook: unknown): Promise<{ saved: string; warnings: string[] } | null> {
+  if (desktop) {
+    const out = await invoke<[string, string[]] | null>("engine_export_one_notebook", { notebook });
+    return out && { saved: out[0], warnings: out[1] };
+  }
+  const out = (await engine()).export_one_notebook(JSON.stringify(notebook));
+  const url = URL.createObjectURL(new Blob([out.bytes as BlobPart], { type: "application/zip" }));
   Object.assign(document.createElement("a"), { href: url, download: out.fileName }).click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   return { saved: out.fileName, warnings: out.warnings };

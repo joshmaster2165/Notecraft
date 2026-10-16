@@ -14,9 +14,11 @@ the shipped arm64 binary:
    `.onetoc2`. [docs/file-format.md](docs/file-format.md) describes the format
    and maps each part to the OneNote functions that read or write it.
 3. **`writer-rs/`**: the other direction. It writes a Notecraft section as a
-   OneNote 2010+ `.one` file: header, transaction log, FileNodeList fragments,
-   object spaces, property sets and file data, with deterministic GUIDs.
-   Notecraft's **Export as OneNote section** uses it. Its tests read every
+   OneNote 2010+ `.one` file, or a whole notebook as the folder OneNote opens
+   (an `Open Notebook.onetoc2` per folder, a `.one` per section, subfolders for
+   section groups). Equations are written as OneNote's own math objects, and
+   paper colour, rule lines and hidden titles carry over. Notecraft's
+   **Export as OneNote section / notebook** uses it. Its tests read every
    file back with this parser and with an independent one (`onenote_parser`),
    and check every checksum and reference count.
 4. **`canvas/`**: `<OneNoteCanvas>`, an isolated React pan/zoom surface that

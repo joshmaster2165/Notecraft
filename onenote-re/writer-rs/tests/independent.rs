@@ -95,7 +95,10 @@ fn reads_section_pages_titles_and_text() {
     let t: Vec<&str> = texts(ps[0]).iter().map(|t| t.text()).collect();
     assert_eq!(t[0], "Heading One");
     assert!(t.contains(&"Side note"));
-    assert!(t.contains(&"x=(-b±√(b^2-4ac))/2a"));
+    // The equation, built up: fraction(−b±radical(, b²)−4ac, 2a).
+    assert!(t.contains(
+        &"x=\u{FDD0}−b±\u{FDD0}\u{FDEE}\u{FDD0}b\u{FDEE}2\u{FDEF}−4ac\u{FDEF}\u{FDEE}2a\u{FDEF}"
+    ));
     let fmt = texts(ps[0])
         .into_iter()
         .find(|t| t.text().contains("Plain"))

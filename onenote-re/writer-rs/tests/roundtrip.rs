@@ -369,7 +369,15 @@ fn pictures_attachments_crop_printout_math() {
         .filter_map(text_of_any)
         .find(|t| t.runs.iter().any(|r| r.style.math == Some(true)))
         .unwrap();
-    assert_eq!(math.text, "x=(-b±√(b^2-4ac))/2a");
+    // Built up: fraction(−b ± radical(no degree, b² − 4ac), 2a).
+    assert_eq!(
+        math.text,
+        "x=\u{FDD0}−b±\u{FDD0}\u{FDEE}\u{FDD0}b\u{FDEE}2\u{FDEF}−4ac\u{FDEF}\u{FDEE}2a\u{FDEF}"
+    );
+    // Each object start is a run of its own (its MathData_* are in the
+    // paragraph's TextRunData; tests/math.rs decodes them).
+    let starts = math.runs.iter().filter(|r| r.text == "\u{FDD0}").count();
+    assert_eq!(starts, 3);
     assert_eq!(math.runs[0].style.font.as_deref(), Some("Cambria Math"));
 
     // The floating picture.

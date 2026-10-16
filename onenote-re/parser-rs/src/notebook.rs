@@ -1764,7 +1764,8 @@ impl<'s, 'a, 'o> NotebookConverter<'s, 'a, 'o> {
             .collect()
     }
 
-    fn text_style(p: &Props) -> TextStyle {
+    /// A run's formatting; `data` is its TextRunData element, where OneNote keeps math objects.
+    fn text_style(p: &Props, data: Option<&Props>) -> TextStyle {
         let flag = |id: u32| p.bool(id).filter(|&b| b);
         TextStyle {
             font: p.str(prop::FONT),
@@ -1784,7 +1785,7 @@ impl<'s, 'a, 'o> NotebookConverter<'s, 'a, 'o> {
             math: flag(prop::MATH_FORMATTING),
             math_ordinary: flag(prop::MATH_ORDINARY),
             math_no_buildup: flag(prop::MATH_NO_BUILDUP),
-            math_object: math_object(p),
+            math_object: data.and_then(math_object).or_else(|| math_object(p)),
             language_id: p.u32(prop::LANGUAGE_ID),
             style_id: p.str(prop::PARAGRAPH_STYLE_ID),
         }
@@ -1806,7 +1807,7 @@ impl<'s, 'a, 'o> NotebookConverter<'s, 'a, 'o> {
             .or_else(|| para.u32(prop::PARAGRAPH_ALIGNMENT));
         let either = |id: u32| p.f32(id).or_else(|| para.f32(id));
         let paragraph = Paragraph {
-            style: Self::text_style(&para),
+            style: Self::text_style(&para, None),
             alignment: match alignment {
                 Some(1) => Some("center"),
                 Some(2) => Some("right"),
@@ -1835,7 +1836,21 @@ impl<'s, 'a, 'o> NotebookConverter<'s, 'a, 'o> {
             .iter()
             .map(|o| self.props(self.resolve(ctx, o)))
             .collect();
-        let styles: Vec<TextStyle> = style_props.iter().map(Self::text_style).collect();
+        // TextRunData: one property set per run, parallel to TextRunFormatting. An
+        // embedded object's run (an equation's U+FDD0) keeps its MathData_* there
+        // (file-format.md §15.4); a MathData_* on the run style is the fallback.
+        let data_sets: &[PropertySet] = match p.get(prop::TEXT_RUN_DATA).map(|p| &p.value) {
+            Some(PropertyValue::PropertyValues { sets, .. }) => sets,
+            _ => &[],
+        };
+        let styles: Vec<TextStyle> = style_props
+            .iter()
+            .enumerate()
+            .map(|(i, sp)| {
+                let data = data_sets.get(i).map(Props::of);
+                Self::text_style(sp, data.as_ref())
+            })
+            .collect();
         let is_link: Vec<bool> = style_props
             .iter()
             .map(|sp| sp.bool(prop::HYPERLINK) == Some(true))

@@ -1,5 +1,7 @@
-//! File › Export › OneNote section (.one), through the writer in
-//! `onenote-re/writer-rs` ([MS-ONESTORE] revision store, [MS-ONE] objects).
+//! File › Export › OneNote section (.one) or a whole notebook (a folder with
+//! `.onetoc2` tables of contents and a `.one` per section), through the
+//! writer in `onenote-re/writer-rs` ([MS-ONESTORE] revision store, [MS-ONE]
+//! objects).
 
 use serde::Serialize;
 use serde_json::Value;
@@ -22,6 +24,23 @@ pub fn export_one(section: &Value, file_name: Option<&str>) -> Result<OneExport,
     let file_name = file_name.map(str::to_string).unwrap_or_else(|| suggested_file_name(section));
     let out = onenote_writer::write_section_with(section, &onenote_writer::WriteOptions { file_name: Some(file_name.clone()) }).map_err(|e| e.to_string())?;
     Ok(OneExport { bytes: out.bytes, file_name, warnings: out.warnings })
+}
+
+/// A notebook as OneNote's folder of files: paths relative and '/'-separated,
+/// starting with the notebook's folder name.
+pub fn export_notebook(notebook: &Value) -> Result<onenote_writer::NotebookOutput, String> {
+    onenote_writer::write_notebook(notebook).map_err(|e| e.to_string())
+}
+
+/// The notebook folder zipped, for the browser to download.
+pub fn export_notebook_zip(notebook: &Value) -> Result<OneExport, String> {
+    let out = export_notebook(notebook)?;
+    let mut zip = crate::zipw::ZipWriter::default();
+    for f in &out.files {
+        zip.add(&f.path, &f.bytes);
+    }
+    let folder = out.files.first().and_then(|f| f.path.split('/').next()).unwrap_or("Notebook");
+    Ok(OneExport { bytes: zip.finish(), file_name: format!("{folder}.zip"), warnings: out.warnings })
 }
 
 #[cfg(test)]

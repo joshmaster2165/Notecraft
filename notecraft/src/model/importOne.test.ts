@@ -7,6 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
+import { readFileSync } from "node:fs";
 import type { ContentBlock, EmbeddedFileBlock, ImageBlock, InkBlock, InkStroke as OneInkStroke, MathObject, NotebookJson, OutlineElementBlock, Page as OnePage, PageBlock, TextRun } from "@re/parser/src/notebook.ts";
 import type { CropRect, Element, FileEl, ImageEl, MathEl, ParagraphEl } from "./types.ts";
 
@@ -195,6 +196,12 @@ test("equations: build-down of RichEdit's math objects", () => {
   assert.equal(buildDown("﷐a+b﷯", at({ 0: { type: 13, char: 0x5b, char1: 0x5d } })).linear, "[a+b]");
   assert.equal(buildDown("﷐sin﷮x﷯", at({ 0: { type: 17 } })).linear, "sin⁡x");
   assert.equal(buildDown("﷐a﷮b﷮c﷮d﷯", at({ 0: { type: 20, columns: 2 } })).linear, "■(a&b@c&d)");
+  // Function names are one operand; a limit under one is followed by a space, not U+2061.
+  const sinSquared = "\ufdd0\ufdd0sin\ufdee2\ufdef\ufdeex\ufdef";
+  assert.equal(buildDown(sinSquared, at({ 0: { type: 17 }, 1: { type: 31 } })).linear, "sin^2\u2061x");
+  const limit = "\ufdd0\ufdd0lim\ufdeen→∞\ufdef\ufdee\ufdd0a\ufdeen\ufdef\ufdef";
+  assert.equal(buildDown(limit, at({ 0: { type: 17 }, 1: { type: 19 }, 11: { type: 29 } })).linear, "lim┬(n→∞) a_n");
+  assert.equal(buildDown("\ufdd0sin\ufdeex+y\ufdef", at({ 0: { type: 17 } })).linear, "sin\u2061(x+y)");
   // Missing MathData: visible text, flagged.
   assert.deepEqual(buildDown("﷐a﷮b﷯", at({})), { linear: "a b", decoded: false });
 });
@@ -325,4 +332,38 @@ test("a custom tag is checkable only when its shape is a check box", () => {
   const defs = new Map(r.customTags.map((d) => [d.label, d]));
   assert.equal(defs.get("Waiting")!.check, undefined);
   assert.equal(defs.get("Follow up")!.check, true);
+});
+
+// --- writer round trip --------------------------------------------------------------
+
+test("equations from onenote-re/writer-rs come back as the same UnicodeMath (writer → onenote-re → importer)", async () => {
+  // Written and parsed by onenote-re/writer-rs/tests/importer_fixture.rs (cargo test refreshes them).
+  const fixtures = new URL("./fixtures/", import.meta.url);
+  const bytes = new Uint8Array(readFileSync(new URL("onenote-equations.one", fixtures)));
+  const rust = JSON.parse(readFileSync(new URL("onenote-equations.json", fixtures), "utf8")) as NotebookJson;
+  // The TypeScript parser reads the writer's file exactly as the Rust one did.
+  const { parseOneNote } = await import("@re/parser/src/notebook.ts");
+  assert.deepEqual(JSON.parse(JSON.stringify(parseOneNote(bytes, {}))), rust);
+
+  const r = importNotebookJson(rust, "Equations.one", new Map());
+  const linear = (elements(r) as MathEl[]).map((e) => [e.kind, e.linear]);
+  // [written by Notecraft's editor, what the importer reads back]: equivalent
+  // UnicodeMath (the writer stores "-" as U+2212; "2a" as a denominator gets its parentheses).
+  const pairs: [string, string][] = [
+    ["(a+b)/c", "(a+b)/c"],
+    ["x=(-b±√(b^2-4ac))/2a", "x=(\u2212b±√(b^2\u22124ac))/(2a)"],
+    ["x_i^2", "x_i^2"],
+    ["√(5&y)", "√(5&y)"],
+    ["∑_(i=1)^n i^2", "∑_(i=1)^n i^2"],
+    ["■(a&b@c&d)", "■(a&b@c&d)"],
+    ["█(x+y=1@x-y=0)", "█(x+y=1@x\u2212y=0)"],
+    ["x\u0302+¯y", "x\u0302+¯y"],
+    ["lim┬(n→∞) a_n", "lim┬(n→∞) a_n"],
+    ["sin^2 x+cos^2 x=1", "sin^2\u2061x+cos^2\u2061x=1"],
+    ["e^(iπ)+1=0", "e^(iπ)+1=0"],
+    ["log_2 x", "log_2\u2061x"],
+    ["∫_0^1 f(x)dx", "∫_0^1 f(x)dx"],
+  ];
+  assert.deepEqual(linear, pairs.map(([, back]) => ["math", back]));
+  assert.deepEqual([r.stats.equations, r.stats.equationsUndecoded], [pairs.length, 0]);
 });

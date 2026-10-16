@@ -95,6 +95,7 @@ pub fn run() {
             engine::engine_mathml,
             engine::engine_export_docx,
             engine::engine_export_one,
+            engine::engine_export_one_notebook,
             engine::engine_protect,
             engine::engine_unlock,
             engine::engine_reseal,

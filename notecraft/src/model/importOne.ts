@@ -756,10 +756,13 @@ export function buildDown(text: string, objectAt: (i: number) => MathObject | un
   return { linear: linear.replace(STRUCTURE, "").trim(), decoded };
 }
 
-/** One argument as an operand: single symbols and numbers bare, anything else in parentheses. */
+/** Function names the equation engine (crates/engine/src/math.rs) sets upright and applies. */
+const FUNCTION_NAMES = new Set(["sin", "cos", "tan", "cot", "sec", "csc", "log", "ln", "exp", "lim", "max", "min", "det", "sinh", "cosh", "tanh", "arg", "gcd", "Pr"]);
+
+/** One argument as an operand: single symbols, numbers and function names bare, anything else in parentheses. */
 function operand(s: string): string {
   const t = s.trim();
-  if (!t || [...t].length === 1 || /^\d+(\.\d+)?$/.test(t)) return t;
+  if (!t || [...t].length === 1 || /^\d+(\.\d+)?$/.test(t) || FUNCTION_NAMES.has(t)) return t;
   if (t.startsWith("(") && t.endsWith(")")) {
     let depth = 0;
     let closesAtEnd = true;
@@ -770,6 +773,22 @@ function operand(s: string): string {
     if (closesAtEnd && depth === 0) return t;
   }
   return `(${t})`;
+}
+
+/**
+ * What a function or n-ary operator applies to: bare when it is one element
+ * (`x`, `a_n`, `x^2`, `(a+b)`), in parentheses when it has an operator or a
+ * space outside brackets.
+ */
+function element(s: string): string {
+  const t = s.trim();
+  let depth = 0;
+  for (const ch of t) {
+    if ("([{⟨".includes(ch)) depth++;
+    else if (")]}⟩".includes(ch)) depth--;
+    else if (depth === 0 && (/\s/.test(ch) || "+-−=±∓<>≤≥≠,/".includes(ch))) return operand(t);
+  }
+  return t;
 }
 
 const chr = (code: number | undefined, fallback: string) => (code ? String.fromCharCode(code) : fallback);
@@ -800,8 +819,12 @@ function mathObjectLinear(o: MathObject, a: string[]): string | undefined {
       const op = o.char && "⁄∕¦".includes(String.fromCharCode(o.char)) ? String.fromCharCode(o.char) : "/";
       return `${operand(a0)}${op}${operand(a1)}`;
     }
-    case 17: // tomFunctionApply: name, U+2061, argument
-      return `${a0.trim()}⁡${operand(a1)}`;
+    case 17: {
+      // tomFunctionApply: name, U+2061, argument. The engine skips U+2061 in a
+      // row but would read it into a limit (lim┬(n→∞)), so a space follows those.
+      const name = a0.trim();
+      return `${name}${/[┬┴]/.test(name) ? " " : "\u2061"}${element(a1)}`;
+    }
     case 18: // tomLeftSubSup: sub, sup, base
       return `(${scripts(a0, a1)})${operand(a2)}`;
     case 19: // tomLowerLimit
@@ -816,7 +839,7 @@ function mathObjectLinear(o: MathObject, a: string[]): string | undefined {
     case 21: {
       // tomNary: lower limit, upper limit, operand
       const body = a2.trim();
-      return `${chr(o.char, "∫")}${scripts(a0, a1)}${body ? ` ${operand(body)}` : ""}`;
+      return `${chr(o.char, "∫")}${scripts(a0, a1)}${body ? ` ${element(body)}` : ""}`;
     }
     case 22: // tomOpChar
       return `${chr(o.char, "")}${a.join("")}`;

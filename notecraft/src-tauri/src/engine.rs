@@ -89,6 +89,38 @@ pub async fn engine_export_one(app: AppHandle, section: Value) -> Result<Option<
     Ok(Some((path.display().to_string(), out.warnings)))
 }
 
+/// Export a notebook as a OneNote notebook folder (.onetoc2 + .one files)
+/// inside a folder the user picks. A folder of that name already there gets
+/// " (2)", " (3)"… instead of being overwritten. Returns the notebook folder
+/// and any warnings, or None if cancelled.
+#[tauri::command]
+pub async fn engine_export_one_notebook(app: AppHandle, notebook: Value) -> Result<Option<(String, Vec<String>)>, String> {
+    let out = one::export_notebook(&notebook)?;
+    let Some(parent) = app.dialog().file().set_title("Choose where to save the OneNote notebook").blocking_pick_folder() else { return Ok(None) };
+    let parent = parent.into_path().map_err(|e| e.to_string())?;
+    let folder = out.files.first().and_then(|f| f.path.split('/').next()).unwrap_or("Notebook").to_string();
+    let mut root = parent.join(&folder);
+    for n in 2.. {
+        if !root.exists() {
+            break;
+        }
+        root = parent.join(format!("{folder} ({n})"));
+    }
+    for f in &out.files {
+        // Paths come from the writer: "<folder>/<sub>/<file>"; never let one leave the notebook folder.
+        let mut rest = f.path.split('/').skip(1).peekable();
+        if rest.peek().is_none() || f.path.split('/').any(|c| c.is_empty() || c == "." || c == "..") {
+            return Err(format!("unsafe export path {:?}", f.path));
+        }
+        let path = rest.fold(root.clone(), |p, c| p.join(c));
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(&path, &f.bytes).map_err(|e| e.to_string())?;
+    }
+    Ok(Some((root.display().to_string(), out.warnings)))
+}
+
 /// Password protect: seal under a new password, returning the key for re-sealing while unlocked.
 #[tauri::command]
 pub async fn engine_protect(plaintext: String, password: String) -> lock::Keyed {

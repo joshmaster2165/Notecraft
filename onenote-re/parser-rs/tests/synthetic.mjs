@@ -619,6 +619,7 @@ function styleProps(rng) {
     ...maybe(rng, 0.2, () => V.bool(P.Hyperlink, rng.chance(0.8))),
     ...maybe(rng, 0.15, () => V.bool(P.MathOrdinary, rng.chance(0.7))),
     ...maybe(rng, 0.15, () => V.bool(P.MathNoBuildup, rng.chance(0.7))),
+    ...maybe(rng, 0.1, () => V.bool(P.TextRunIsEmbeddedObject, true)),
     ...(rng.chance(0.25) ? mathData(rng) : maybe(rng, 0.2, () => V.u8(P.MathData_Align, 0))),
   ];
 }
@@ -690,6 +691,12 @@ class Section {
     if (rng.chance(0.15)) props.push(V.bytes(P.TextExtendedAscii, Uint8Array.from({ length: 1 + rng.int(20) }, () => rng.int(256))));
     if (rng.chance(0.9)) props.push(V.bytes(P.TextRunIndex, runIndex.done()));
     props.push(V.oids(P.TextRunFormatting, styles));
+    // TextRunData: per-run property sets, where OneNote keeps a math object's
+    // MathData_* (file-format.md §15.4). Sometimes shorter or longer than the runs.
+    if (rng.chance(0.25)) {
+      const n = Math.max(1, ends.length + rng.pick([0, 0, 0, -1, 1]));
+      props.push(V.sets(P.TextRunData, Array.from({ length: n }, () => (rng.chance(0.5) ? mathData(rng) : []))));
+    }
     if (rng.chance(0.6)) props.push(V.oid(P.ParagraphStyle, b.object(rev, J.ParagraphStyleObject, [...styleProps(rng), ...maybe(rng, 0.3, () => V.u8(P.ParagraphAlignment, rng.int(4))), ...maybe(rng, 0.3, () => V.f32(P.ParagraphSpaceBefore, float(rng)))])));
     if (rng.chance(0.3)) props.push(V.u8(P.ParagraphAlignment, rng.int(4)));
     for (const n of ["ParagraphSpaceBefore", "ParagraphSpaceAfter", "ParagraphLineSpacingExact"]) if (rng.chance(0.2)) props.push(V.f32(P[n], float(rng)));

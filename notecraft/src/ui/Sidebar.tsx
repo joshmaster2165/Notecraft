@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, type DragEvent } from "react";
 import type { Notebook, Section, SectionGroup } from "../model/types.ts";
 import * as ops from "../model/ops.ts";
 import { store, useStore } from "../store/store.ts";
-import { deleteSection, exportNotebook, exportOneNoteSection, exportWord, importFiles, importNotebookFolder, importOneNoteFolder, newNotebook, newSection, newSectionGroup, selectNotebook, selectSection } from "../store/actions.ts";
+import { deleteSection, exportNotebook, exportOneNoteNotebookFolder, exportOneNoteSection, exportWord, importFiles, importNotebookFolder, importOneNoteFolder, newNotebook, newSection, newSectionGroup, selectNotebook, selectSection } from "../store/actions.ts";
 import { Icon, Logo } from "./icons.tsx";
 import { desktop } from "../desktop.ts";
 import { copySectionLink } from "../store/links.ts";
@@ -260,6 +260,11 @@ export function Sidebar() {
             </button>
             {notebook && (
               <button onClick={() => (setRenaming(notebook.id), setPickerOpen(false))}>Rename “{notebook.name}”</button>
+            )}
+            {notebook && (
+              <button onClick={() => (void exportOneNoteNotebookFolder(notebook.id), setPickerOpen(false))} title="A folder OneNote opens: a .onetoc2 and a .one per section">
+                <Icon.export width={16} height={16} /> Export “{notebook.name}” as OneNote notebook…
+              </button>
             )}
           </div>
         )}

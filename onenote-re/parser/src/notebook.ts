@@ -994,7 +994,8 @@ export class NotebookConverter {
     });
   }
 
-  private textStyle(p: Props): TextStyle {
+  /** A run's formatting; `data` is its TextRunData element, where OneNote keeps math objects. */
+  private textStyle(p: Props, data?: Props): TextStyle {
     const size = p.u32(Prop.FontSize!);
     return compact({
       font: p.str(Prop.Font!),
@@ -1011,7 +1012,7 @@ export class NotebookConverter {
       math: p.bool(Prop.MathFormatting!) || undefined,
       mathOrdinary: p.bool(Prop.MathOrdinary!) || undefined,
       mathNoBuildup: p.bool(Prop.MathNoBuildup!) || undefined,
-      mathObject: mathObject(p),
+      mathObject: (data && mathObject(data)) ?? mathObject(p),
       languageId: p.u32(Prop.LanguageID!),
       styleId: p.str(Prop.ParagraphStyleId!),
     });
@@ -1042,7 +1043,12 @@ export class NotebookConverter {
       for (let i = 0; i + 4 <= idxBytes.length; i += 4) ends.push(dv.getUint32(i, true));
     }
     const styleProps = p.oids(Prop.TextRunFormatting!).map((o) => this.props(this.resolve(ctx, o)));
-    const styles = styleProps.map((sp) => this.textStyle(sp));
+    // TextRunData: one property set per run, parallel to TextRunFormatting. An
+    // embedded object's run (an equation's U+FDD0) keeps its MathData_* there
+    // (file-format.md §15.4); a MathData_* on the run style is the fallback.
+    const runData = p.get(Prop.TextRunData!)?.value;
+    const dataSets = runData?.kind === "propertyValues" ? runData.value : [];
+    const styles = styleProps.map((sp, i) => this.textStyle(sp, dataSets[i] ? new Props(dataSets[i]) : undefined));
     const isLink = styleProps.map((sp) => sp.bool(Prop.Hyperlink!) === true);
     const bounds = [0, ...ends.filter((e) => e > 0 && e < raw.length), raw.length];
     const runs: TextRun[] = [];

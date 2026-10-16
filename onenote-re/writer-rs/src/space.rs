@@ -21,6 +21,18 @@
 //! reference count of 255. A reference count is the number of references to
 //! the object within the revision, plus one for a root (§2.1.5); OneNote's
 //! files count repeated references from one object separately, and so do we.
+//!
+//! A `.onetoc2` table of contents uses the older (OneNote 2007) revision
+//! manifest instead ([MS-ONESTORE] §2.1.9), without object groups:
+//!
+//! ```text
+//!   revision manifest list       RevisionManifestListStartFND
+//!                                RevisionManifestStart4FND  (role 1, no dependency)
+//!                                GlobalIdTableStartFNDX · GlobalIdTableEntryFNDX… · GlobalIdTableEndFNDX
+//!                                ObjectDeclarationWithRefCountFNDX…
+//!                                RootObjectReference2FNDX  (1 content)
+//!                                RevisionManifestEndFND
+//! ```
 
 use std::collections::HashMap;
 
@@ -152,22 +164,12 @@ impl Space {
         Ok(counts)
     }
 
-    /// The object space manifest list, with everything under it.
-    pub fn into_manifest(self, rid: ExGuid, group: ExGuid) -> Result<FileNodeList, WriteError> {
-        let counts = self.ref_counts()?;
-
-        // Global identification table: object GUIDs in declaration order,
-        // then the object spaces referenced.
-        let mut table: Vec<Guid> = Vec::new();
-        let mut index: HashMap<Guid, u32> = HashMap::new();
-        let mut add = |g: Guid, table: &mut Vec<Guid>| {
-            index.entry(g).or_insert_with(|| {
-                table.push(g);
-                (table.len() - 1) as u32
-            });
-        };
+    /// Global identification table: object GUIDs in declaration order, then
+    /// the object spaces referenced.
+    fn id_table(&self) -> Result<IdTable, WriteError> {
+        let mut table = IdTable::default();
         for o in &self.objects {
-            add(o.oid.guid, &mut table);
+            table.add(o.oid.guid);
         }
         let mut osids = Vec::new();
         for o in &self.objects {
@@ -176,21 +178,23 @@ impl Space {
             }
         }
         for s in osids {
-            add(s.guid, &mut table);
+            table.add(s.guid);
         }
-        if table.len() > 0x00ff_ffff {
+        if table.guids.len() > 0x00ff_ffff {
             return Err(WriteError::TooLarge(
                 "more than 2^24 identities in one page".into(),
             ));
         }
-        let index_of = |g: Guid| index[&g];
+        Ok(table)
+    }
+
+    /// The object space manifest list, with everything under it.
+    pub fn into_manifest(self, rid: ExGuid, group: ExGuid) -> Result<FileNodeList, WriteError> {
+        let counts = self.ref_counts()?;
+        let table = self.id_table()?;
+        let index_of = |g: Guid| table.index[&g];
         let oid_of = |i: ObjIdx| self.objects[i].oid;
-        let compact = |id: ExGuid| -> Result<u32, WriteError> {
-            if id.n > 0xff {
-                return Err(WriteError::internal("ExtendedGUID.n above 255"));
-            }
-            Ok(id.n | index_of(id.guid) << 8)
-        };
+        let compact = |id: ExGuid| table.compact(id);
 
         let mut g = FileNodeList::default();
         g.push(FileNode::plain(
@@ -198,11 +202,7 @@ impl Space {
             group.bytes().to_vec(),
         ));
         g.push(FileNode::plain(fnd::GLOBAL_ID_TABLE_START2, Vec::new()));
-        for (i, guid) in table.iter().enumerate() {
-            let mut d = (i as u32).to_le_bytes().to_vec();
-            d.extend_from_slice(&guid.0);
-            g.push(FileNode::plain(fnd::GLOBAL_ID_TABLE_ENTRY, d));
-        }
+        table.push_entries(&mut g);
         g.push(FileNode::plain(fnd::GLOBAL_ID_TABLE_END, Vec::new()));
 
         let mut ref_crc = 0u32;
@@ -299,17 +299,124 @@ impl Space {
         }
         rev.push(FileNode::plain(fnd::REVISION_MANIFEST_END, Vec::new()));
 
-        let mut osl = FileNodeList::default();
-        osl.push(FileNode::plain(
-            fnd::OBJECT_SPACE_MANIFEST_LIST_START,
-            self.gosid.bytes().to_vec(),
-        ));
-        osl.push(FileNode {
-            id: fnd::REVISION_MANIFEST_LIST_REFERENCE,
-            target: Target::List(rev),
-            data: Vec::new(),
-        });
-        Ok(osl)
+        Ok(object_space_manifest(self.gosid, rev))
+    }
+
+    /// The object space manifest list of a `.onetoc2`: one revision in the
+    /// OneNote 2007 form, every object a property set (JCID 0x00020001,
+    /// [MS-ONESTORE] §2.6.15).
+    pub fn into_toc_manifest(self, rid: ExGuid) -> Result<FileNodeList, WriteError> {
+        let counts = self.ref_counts()?;
+        let table = self.id_table()?;
+        let index_of = |g: Guid| table.index[&g];
+        let oid_of = |i: ObjIdx| self.objects[i].oid;
+
+        let mut rev = FileNodeList::default();
+        let mut start = self.gosid.bytes().to_vec();
+        start.extend_from_slice(&0u32.to_le_bytes()); // nInstance
+        rev.push(FileNode::plain(fnd::REVISION_MANIFEST_LIST_START, start));
+        let mut manifest = rid.bytes().to_vec();
+        manifest.extend_from_slice(&ExGuid::NIL.bytes()); // ridDependent
+        manifest.extend_from_slice(&0u64.to_le_bytes()); // timeCreation: ignored
+        manifest.extend_from_slice(&role::CONTENT.to_le_bytes()); // RevisionRole
+        manifest.extend_from_slice(&0u16.to_le_bytes()); // odcsDefault: not encrypted
+        rev.push(FileNode::plain(fnd::REVISION_MANIFEST_START4, manifest));
+        rev.push(FileNode::plain(fnd::GLOBAL_ID_TABLE_START, vec![0])); // Reserved
+        table.push_entries(&mut rev);
+        rev.push(FileNode::plain(fnd::GLOBAL_ID_TABLE_END, Vec::new()));
+        for (o, &count) in self.objects.iter().zip(&counts) {
+            let ObjData::Props(p) = &o.data else {
+                return Err(WriteError::internal(
+                    "a table of contents holds property sets only",
+                ));
+            };
+            if o.jcid != jcid::PERSISTABLE_PROPERTY_CONTAINER_FOR_TOC {
+                return Err(WriteError::internal(format!(
+                    "JCID 0x{:x} in a table of contents",
+                    o.jcid
+                )));
+            }
+            let e = propset::encode(p, &oid_of, &index_of)?;
+            // ObjectDeclarationWithRefCountBody: oid, then jci (the JCID's
+            // index, 10 bits) · odcs (4) · reserved (2), then
+            // fHasOidReferences · fHasOsidReferences · reserved (30).
+            let mut d = table.compact(o.oid)?.to_le_bytes().to_vec();
+            d.extend_from_slice(&((o.jcid & 0x3ff) as u16).to_le_bytes());
+            let flags = u32::from(e.has_oid_refs) | u32::from(e.has_osid_refs) << 1;
+            d.extend_from_slice(&flags.to_le_bytes());
+            let id = if count > 0xff {
+                d.extend_from_slice(&count.to_le_bytes());
+                fnd::OBJECT_DECLARATION_WITH_REF_COUNT2
+            } else {
+                d.push(count as u8);
+                fnd::OBJECT_DECLARATION_WITH_REF_COUNT
+            };
+            rev.push(FileNode {
+                id,
+                target: Target::Blob(e.bytes),
+                data: d,
+            });
+        }
+        for &(r, idx) in &self.roots {
+            let mut d = table.compact(self.objects[idx].oid)?.to_le_bytes().to_vec();
+            d.extend_from_slice(&r.to_le_bytes());
+            rev.push(FileNode::plain(fnd::ROOT_OBJECT_REFERENCE2, d));
+        }
+        rev.push(FileNode::plain(fnd::REVISION_MANIFEST_END, Vec::new()));
+        Ok(object_space_manifest(self.gosid, rev))
+    }
+}
+
+/// ObjectSpaceManifestListStartFND, then the reference to the revision
+/// manifest list.
+fn object_space_manifest(gosid: ExGuid, rev: FileNodeList) -> FileNodeList {
+    let mut osl = FileNodeList::default();
+    osl.push(FileNode::plain(
+        fnd::OBJECT_SPACE_MANIFEST_LIST_START,
+        gosid.bytes().to_vec(),
+    ));
+    osl.push(FileNode {
+        id: fnd::REVISION_MANIFEST_LIST_REFERENCE,
+        target: Target::List(rev),
+        data: Vec::new(),
+    });
+    osl
+}
+
+#[derive(Default)]
+struct IdTable {
+    guids: Vec<Guid>,
+    index: HashMap<Guid, u32>,
+}
+
+impl IdTable {
+    fn add(&mut self, g: Guid) {
+        if !self.index.contains_key(&g) {
+            self.index.insert(g, self.guids.len() as u32);
+            self.guids.push(g);
+        }
+    }
+
+    /// CompactID ([MS-ONESTORE] §2.2.2): `n` in the low byte, the table
+    /// index above it.
+    fn compact(&self, id: ExGuid) -> Result<u32, WriteError> {
+        if id.n > 0xff {
+            return Err(WriteError::internal("ExtendedGUID.n above 255"));
+        }
+        let index = self
+            .index
+            .get(&id.guid)
+            .ok_or_else(|| WriteError::internal("identity missing from the global id table"))?;
+        Ok(id.n | index << 8)
+    }
+
+    /// GlobalIdTableEntryFNDX nodes, indexes from 0.
+    fn push_entries(&self, list: &mut FileNodeList) {
+        for (i, guid) in self.guids.iter().enumerate() {
+            let mut d = (i as u32).to_le_bytes().to_vec();
+            d.extend_from_slice(&guid.0);
+            list.push(FileNode::plain(fnd::GLOBAL_ID_TABLE_ENTRY, d));
+        }
     }
 }
 

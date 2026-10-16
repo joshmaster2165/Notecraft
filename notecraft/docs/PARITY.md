@@ -99,7 +99,7 @@ from the binary and file-format analysis in [`../../onenote-re`](../../onenote-r
 | Export notebook | ✅ | `.notecraft.json` |
 | Export page | ✅ | Markdown |
 | Print / save as PDF | ✅ | |
-| Export `.one`, `.docx` | 🟡 | Word for a page or section, with real Word equations. OneNote section (`.one`) from the section menu, written by [`onenote-re/writer-rs`](../../onenote-re/writer-rs) and checked with an independent reader; not yet opened in OneNote itself |
+| Export `.one`, `.docx` | 🟡 | Word for a page or section, with real Word equations. OneNote section (`.one`) or a whole notebook folder (`.onetoc2` + sections + section groups), with OneNote's own equation objects, written by [`onenote-re/writer-rs`](../../onenote-re/writer-rs) and checked with an independent reader; not yet opened in OneNote itself |
 
 ## Desktop app
 

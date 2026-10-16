@@ -1,0 +1,1054 @@
+{
+  "format": "onenote-revision-store",
+  "source": {
+    "fileKind": "section",
+    "guidFile": "{366EAF00-2366-5637-B8D8-988EB510F590}",
+    "fileFormatVersion": {
+      "lastWriter": "0x2a",
+      "oldestWriter": "0x2a",
+      "newestWriter": "0x2a",
+      "oldestReader": "0x2a"
+    },
+    "byteLength": 9688,
+    "objectSpaces": 2,
+    "embeddedFiles": 0
+  },
+  "section": {
+    "id": "{76349D98-0B7A-57C2-9FAC-D105A9794BA2}#1",
+    "pages": [
+      {
+        "id": "{8162B3F0-C784-5116-890A-F560058E39C1}#1",
+        "title": "Equations",
+        "level": 1,
+        "createdAt": "2026-10-16T09:00:00.000Z",
+        "lastModified": "2026-10-16T09:00:00.000Z",
+        "author": "Notecraft",
+        "size": {
+          "width": 753.84,
+          "height": 783
+        },
+        "titleBlocks": [
+          {
+            "type": "outline",
+            "id": "{52C54A20-90B4-54DA-97D6-3DA7BF826474}#1",
+            "layout": {
+              "height": 21.6
+            },
+            "role": "titleText",
+            "children": [
+              {
+                "type": "outlineElement",
+                "id": "{396EB7AE-4AFA-5275-9517-83FAF92DC1DD}#1",
+                "level": 1,
+                "createdAt": "2026-10-16T09:00:00.000Z",
+                "lastModified": "2026-10-16T09:00:00.000Z",
+                "content": [
+                  {
+                    "type": "richText",
+                    "id": "{BECBF4D9-A863-502E-993F-C8F150147D3C}#1",
+                    "text": "Equations",
+                    "runs": [
+                      {
+                        "start": 0,
+                        "end": 9,
+                        "text": "Equations",
+                        "style": {
+                          "languageId": 1033
+                        }
+                      }
+                    ],
+                    "paragraph": {
+                      "font": "Calibri Light",
+                      "fontSize": 20,
+                      "styleId": "PageTitle",
+                      "spaceBefore": 0,
+                      "spaceAfter": 0,
+                      "lineSpacing": 0
+                    }
+                  }
+                ],
+                "children": []
+              }
+            ]
+          },
+          {
+            "type": "outline",
+            "id": "{4AD119E0-05AC-571B-83FD-3AEA74095C96}#1",
+            "layout": {
+              "height": 21.6
+            },
+            "role": "titleDate",
+            "children": [
+              {
+                "type": "outlineElement",
+                "id": "{075ED523-2351-512C-9AB6-F1177DDBDDAB}#1",
+                "level": 1,
+                "createdAt": "2026-10-16T09:00:00.000Z",
+                "lastModified": "2026-10-16T09:00:00.000Z",
+                "content": [
+                  {
+                    "type": "richText",
+                    "id": "{65DC1B08-9A25-5580-BED6-C61800AF287B}#1",
+                    "text": "Friday, October 16, 2026",
+                    "runs": [
+                      {
+                        "start": 0,
+                        "end": 24,
+                        "text": "Friday, October 16, 2026",
+                        "style": {
+                          "languageId": 1033
+                        }
+                      }
+                    ],
+                    "paragraph": {
+                      "font": "Calibri",
+                      "fontSize": 10,
+                      "color": "#767676",
+                      "styleId": "PageDateTime",
+                      "spaceBefore": 0,
+                      "spaceAfter": 0,
+                      "lineSpacing": 0
+                    }
+                  }
+                ],
+                "children": []
+              },
+              {
+                "type": "outlineElement",
+                "id": "{C50EEC19-2164-562A-B49D-0E370C893646}#1",
+                "level": 1,
+                "createdAt": "2026-10-16T09:00:00.000Z",
+                "lastModified": "2026-10-16T09:00:00.000Z",
+                "content": [
+                  {
+                    "type": "richText",
+                    "id": "{60D8F4AF-3254-5C90-8269-7BC4C165B13C}#1",
+                    "text": "9:00 AM",
+                    "runs": [
+                      {
+                        "start": 0,
+                        "end": 7,
+                        "text": "9:00 AM",
+                        "style": {
+                          "languageId": 1033
+                        }
+                      }
+                    ],
+                    "paragraph": {
+                      "font": "Calibri",
+                      "fontSize": 10,
+                      "color": "#767676",
+                      "styleId": "PageDateTime",
+                      "spaceBefore": 0,
+                      "spaceAfter": 0,
+                      "lineSpacing": 0
+                    }
+                  }
+                ],
+                "children": []
+              }
+            ]
+          }
+        ],
+        "blocks": [
+          {
+            "type": "outline",
+            "id": "{743D0E21-7C3C-5D72-937E-DEA7F355B980}#1",
+            "layout": {
+              "x": 54,
+              "y": 90,
+              "width": 500,
+              "height": 196.56
+            },
+            "children": [
+              {
+                "type": "outlineElement",
+                "id": "{2FCB98CC-06A7-529B-9B85-2B62CB51CA53}#1",
+                "level": 1,
+                "createdAt": "2026-10-16T09:00:00.000Z",
+                "lastModified": "2026-10-16T09:00:00.000Z",
+                "content": [
+                  {
+                    "type": "richText",
+                    "id": "{D52EE724-F8D6-5349-9E63-1A9ABB094129}#1",
+                    "text": "﷐a+b﷮c﷯",
+                    "runs": [
+                      {
+                        "start": 0,
+                        "end": 1,
+                        "text": "﷐",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "mathObject": {
+                            "type": 16,
+                            "args": 2
+                          },
+                          "languageId": 1033
+                        }
+                      },
+                      {
+                        "start": 1,
+                        "end": 7,
+                        "text": "a+b﷮c﷯",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "languageId": 1033
+                        }
+                      }
+                    ],
+                    "paragraph": {
+                      "font": "Calibri",
+                      "fontSize": 11,
+                      "styleId": "p",
+                      "spaceBefore": 0,
+                      "spaceAfter": 0,
+                      "lineSpacing": 0
+                    }
+                  }
+                ],
+                "children": []
+              },
+              {
+                "type": "outlineElement",
+                "id": "{12363399-B0CE-55F3-BA53-1AA6D0D651D0}#1",
+                "level": 1,
+                "createdAt": "2026-10-16T09:00:00.000Z",
+                "lastModified": "2026-10-16T09:00:00.000Z",
+                "content": [
+                  {
+                    "type": "richText",
+                    "id": "{866D02F8-6CF8-5F47-9A77-FAB76F784E47}#1",
+                    "text": "x=﷐−b±﷐﷮﷐b﷮2﷯−4ac﷯﷮2a﷯",
+                    "runs": [
+                      {
+                        "start": 0,
+                        "end": 2,
+                        "text": "x=",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "languageId": 1033
+                        }
+                      },
+                      {
+                        "start": 2,
+                        "end": 3,
+                        "text": "﷐",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "mathObject": {
+                            "type": 16,
+                            "args": 2
+                          },
+                          "languageId": 1033
+                        }
+                      },
+                      {
+                        "start": 3,
+                        "end": 6,
+                        "text": "−b±",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "languageId": 1033
+                        }
+                      },
+                      {
+                        "start": 6,
+                        "end": 7,
+                        "text": "﷐",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "mathObject": {
+                            "type": 25,
+                            "args": 2
+                          },
+                          "languageId": 1033
+                        }
+                      },
+                      {
+                        "start": 7,
+                        "end": 8,
+                        "text": "﷮",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "languageId": 1033
+                        }
+                      },
+                      {
+                        "start": 8,
+                        "end": 9,
+                        "text": "﷐",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "mathObject": {
+                            "type": 31,
+                            "args": 2
+                          },
+                          "languageId": 1033
+                        }
+                      },
+                      {
+                        "start": 9,
+                        "end": 22,
+                        "text": "b﷮2﷯−4ac﷯﷮2a﷯",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "languageId": 1033
+                        }
+                      }
+                    ],
+                    "paragraph": {
+                      "font": "Calibri",
+                      "fontSize": 11,
+                      "styleId": "p",
+                      "spaceBefore": 0,
+                      "spaceAfter": 0,
+                      "lineSpacing": 0
+                    }
+                  }
+                ],
+                "children": []
+              },
+              {
+                "type": "outlineElement",
+                "id": "{F29F573A-010D-5E64-B5CA-30189B89CA99}#1",
+                "level": 1,
+                "createdAt": "2026-10-16T09:00:00.000Z",
+                "lastModified": "2026-10-16T09:00:00.000Z",
+                "content": [
+                  {
+                    "type": "richText",
+                    "id": "{EB58D288-51B9-5F6B-A2D4-6D76E33D081D}#1",
+                    "text": "﷐x﷮i﷮2﷯",
+                    "runs": [
+                      {
+                        "start": 0,
+                        "end": 1,
+                        "text": "﷐",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "mathObject": {
+                            "type": 30,
+                            "args": 3
+                          },
+                          "languageId": 1033
+                        }
+                      },
+                      {
+                        "start": 1,
+                        "end": 7,
+                        "text": "x﷮i﷮2﷯",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "languageId": 1033
+                        }
+                      }
+                    ],
+                    "paragraph": {
+                      "font": "Calibri",
+                      "fontSize": 11,
+                      "styleId": "p",
+                      "spaceBefore": 0,
+                      "spaceAfter": 0,
+                      "lineSpacing": 0
+                    }
+                  }
+                ],
+                "children": []
+              },
+              {
+                "type": "outlineElement",
+                "id": "{9EC2623D-3738-506A-B3B3-C256718BC117}#1",
+                "level": 1,
+                "createdAt": "2026-10-16T09:00:00.000Z",
+                "lastModified": "2026-10-16T09:00:00.000Z",
+                "content": [
+                  {
+                    "type": "richText",
+                    "id": "{F7DE0EB0-4231-5BFE-BED8-248BB3BA77F2}#1",
+                    "text": "﷐5﷮y﷯",
+                    "runs": [
+                      {
+                        "start": 0,
+                        "end": 1,
+                        "text": "﷐",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "mathObject": {
+                            "type": 25,
+                            "args": 2
+                          },
+                          "languageId": 1033
+                        }
+                      },
+                      {
+                        "start": 1,
+                        "end": 5,
+                        "text": "5﷮y﷯",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "languageId": 1033
+                        }
+                      }
+                    ],
+                    "paragraph": {
+                      "font": "Calibri",
+                      "fontSize": 11,
+                      "styleId": "p",
+                      "spaceBefore": 0,
+                      "spaceAfter": 0,
+                      "lineSpacing": 0
+                    }
+                  }
+                ],
+                "children": []
+              },
+              {
+                "type": "outlineElement",
+                "id": "{594224BD-46FC-5BF2-9D30-9EE20A5B260B}#1",
+                "level": 1,
+                "createdAt": "2026-10-16T09:00:00.000Z",
+                "lastModified": "2026-10-16T09:00:00.000Z",
+                "content": [
+                  {
+                    "type": "richText",
+                    "id": "{9303D9BA-2F9F-5A0F-A930-8131FBCD69C7}#1",
+                    "text": "﷐i=1﷮n﷮﷐i﷮2﷯﷯",
+                    "runs": [
+                      {
+                        "start": 0,
+                        "end": 1,
+                        "text": "﷐",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "mathObject": {
+                            "type": 21,
+                            "args": 3,
+                            "char": 8721
+                          },
+                          "languageId": 1033
+                        }
+                      },
+                      {
+                        "start": 1,
+                        "end": 7,
+                        "text": "i=1﷮n﷮",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "languageId": 1033
+                        }
+                      },
+                      {
+                        "start": 7,
+                        "end": 8,
+                        "text": "﷐",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "mathObject": {
+                            "type": 31,
+                            "args": 2
+                          },
+                          "languageId": 1033
+                        }
+                      },
+                      {
+                        "start": 8,
+                        "end": 13,
+                        "text": "i﷮2﷯﷯",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "languageId": 1033
+                        }
+                      }
+                    ],
+                    "paragraph": {
+                      "font": "Calibri",
+                      "fontSize": 11,
+                      "styleId": "p",
+                      "spaceBefore": 0,
+                      "spaceAfter": 0,
+                      "lineSpacing": 0
+                    }
+                  }
+                ],
+                "children": []
+              },
+              {
+                "type": "outlineElement",
+                "id": "{B69157A5-3833-5922-A83C-73C6F4498FCE}#1",
+                "level": 1,
+                "createdAt": "2026-10-16T09:00:00.000Z",
+                "lastModified": "2026-10-16T09:00:00.000Z",
+                "content": [
+                  {
+                    "type": "richText",
+                    "id": "{791B3CA3-4A85-5D7B-ADC4-0CDA05E225DF}#1",
+                    "text": "﷐a﷮b﷮c﷮d﷯",
+                    "runs": [
+                      {
+                        "start": 0,
+                        "end": 1,
+                        "text": "﷐",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "mathObject": {
+                            "type": 20,
+                            "args": 4,
+                            "columns": 2
+                          },
+                          "languageId": 1033
+                        }
+                      },
+                      {
+                        "start": 1,
+                        "end": 9,
+                        "text": "a﷮b﷮c﷮d﷯",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "languageId": 1033
+                        }
+                      }
+                    ],
+                    "paragraph": {
+                      "font": "Calibri",
+                      "fontSize": 11,
+                      "styleId": "p",
+                      "spaceBefore": 0,
+                      "spaceAfter": 0,
+                      "lineSpacing": 0
+                    }
+                  }
+                ],
+                "children": []
+              },
+              {
+                "type": "outlineElement",
+                "id": "{408C108D-C138-5221-AD24-AA423864567E}#1",
+                "level": 1,
+                "createdAt": "2026-10-16T09:00:00.000Z",
+                "lastModified": "2026-10-16T09:00:00.000Z",
+                "content": [
+                  {
+                    "type": "richText",
+                    "id": "{C7751B7E-AFCE-581C-9FC3-47E95C52FCD8}#1",
+                    "text": "﷐x+y=1﷮x−y=0﷯",
+                    "runs": [
+                      {
+                        "start": 0,
+                        "end": 1,
+                        "text": "﷐",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "mathObject": {
+                            "type": 15,
+                            "args": 2
+                          },
+                          "languageId": 1033
+                        }
+                      },
+                      {
+                        "start": 1,
+                        "end": 13,
+                        "text": "x+y=1﷮x−y=0﷯",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "languageId": 1033
+                        }
+                      }
+                    ],
+                    "paragraph": {
+                      "font": "Calibri",
+                      "fontSize": 11,
+                      "styleId": "p",
+                      "spaceBefore": 0,
+                      "spaceAfter": 0,
+                      "lineSpacing": 0
+                    }
+                  }
+                ],
+                "children": []
+              },
+              {
+                "type": "outlineElement",
+                "id": "{9932CCAA-8A2C-539D-8BFC-78B07A81B69E}#1",
+                "level": 1,
+                "createdAt": "2026-10-16T09:00:00.000Z",
+                "lastModified": "2026-10-16T09:00:00.000Z",
+                "content": [
+                  {
+                    "type": "richText",
+                    "id": "{E8E08A3C-215D-51E5-B902-F9689E9FEE27}#1",
+                    "text": "﷐x﷯+﷐y﷯",
+                    "runs": [
+                      {
+                        "start": 0,
+                        "end": 1,
+                        "text": "﷐",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "mathObject": {
+                            "type": 10,
+                            "args": 1,
+                            "char": 770
+                          },
+                          "languageId": 1033
+                        }
+                      },
+                      {
+                        "start": 1,
+                        "end": 4,
+                        "text": "x﷯+",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "languageId": 1033
+                        }
+                      },
+                      {
+                        "start": 4,
+                        "end": 5,
+                        "text": "﷐",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "mathObject": {
+                            "type": 23,
+                            "args": 1
+                          },
+                          "languageId": 1033
+                        }
+                      },
+                      {
+                        "start": 5,
+                        "end": 7,
+                        "text": "y﷯",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "languageId": 1033
+                        }
+                      }
+                    ],
+                    "paragraph": {
+                      "font": "Calibri",
+                      "fontSize": 11,
+                      "styleId": "p",
+                      "spaceBefore": 0,
+                      "spaceAfter": 0,
+                      "lineSpacing": 0
+                    }
+                  }
+                ],
+                "children": []
+              },
+              {
+                "type": "outlineElement",
+                "id": "{556465BA-DD5B-5393-BE42-F514BE2018C9}#1",
+                "level": 1,
+                "createdAt": "2026-10-16T09:00:00.000Z",
+                "lastModified": "2026-10-16T09:00:00.000Z",
+                "content": [
+                  {
+                    "type": "richText",
+                    "id": "{71EEE27C-9A24-598C-BDAB-D4CB2625E109}#1",
+                    "text": "﷐﷐lim﷮n→∞﷯﷮﷐a﷮n﷯﷯",
+                    "runs": [
+                      {
+                        "start": 0,
+                        "end": 1,
+                        "text": "﷐",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "mathObject": {
+                            "type": 17,
+                            "args": 2
+                          },
+                          "languageId": 1033
+                        }
+                      },
+                      {
+                        "start": 1,
+                        "end": 2,
+                        "text": "﷐",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "mathObject": {
+                            "type": 19,
+                            "args": 2
+                          },
+                          "languageId": 1033
+                        }
+                      },
+                      {
+                        "start": 2,
+                        "end": 11,
+                        "text": "lim﷮n→∞﷯﷮",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "languageId": 1033
+                        }
+                      },
+                      {
+                        "start": 11,
+                        "end": 12,
+                        "text": "﷐",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "mathObject": {
+                            "type": 29,
+                            "args": 2
+                          },
+                          "languageId": 1033
+                        }
+                      },
+                      {
+                        "start": 12,
+                        "end": 17,
+                        "text": "a﷮n﷯﷯",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "languageId": 1033
+                        }
+                      }
+                    ],
+                    "paragraph": {
+                      "font": "Calibri",
+                      "fontSize": 11,
+                      "styleId": "p",
+                      "spaceBefore": 0,
+                      "spaceAfter": 0,
+                      "lineSpacing": 0
+                    }
+                  }
+                ],
+                "children": []
+              },
+              {
+                "type": "outlineElement",
+                "id": "{C86C07C8-AEED-52C5-B487-792B38432116}#1",
+                "level": 1,
+                "createdAt": "2026-10-16T09:00:00.000Z",
+                "lastModified": "2026-10-16T09:00:00.000Z",
+                "content": [
+                  {
+                    "type": "richText",
+                    "id": "{BD8D1473-2CE7-51F4-A5D4-ACDD92B10B7F}#1",
+                    "text": "﷐﷐sin﷮2﷯﷮x﷯+﷐﷐cos﷮2﷯﷮x﷯=1",
+                    "runs": [
+                      {
+                        "start": 0,
+                        "end": 1,
+                        "text": "﷐",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "mathObject": {
+                            "type": 17,
+                            "args": 2
+                          },
+                          "languageId": 1033
+                        }
+                      },
+                      {
+                        "start": 1,
+                        "end": 2,
+                        "text": "﷐",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "mathObject": {
+                            "type": 31,
+                            "args": 2
+                          },
+                          "languageId": 1033
+                        }
+                      },
+                      {
+                        "start": 2,
+                        "end": 12,
+                        "text": "sin﷮2﷯﷮x﷯+",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "languageId": 1033
+                        }
+                      },
+                      {
+                        "start": 12,
+                        "end": 13,
+                        "text": "﷐",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "mathObject": {
+                            "type": 17,
+                            "args": 2
+                          },
+                          "languageId": 1033
+                        }
+                      },
+                      {
+                        "start": 13,
+                        "end": 14,
+                        "text": "﷐",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "mathObject": {
+                            "type": 31,
+                            "args": 2
+                          },
+                          "languageId": 1033
+                        }
+                      },
+                      {
+                        "start": 14,
+                        "end": 25,
+                        "text": "cos﷮2﷯﷮x﷯=1",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "languageId": 1033
+                        }
+                      }
+                    ],
+                    "paragraph": {
+                      "font": "Calibri",
+                      "fontSize": 11,
+                      "styleId": "p",
+                      "spaceBefore": 0,
+                      "spaceAfter": 0,
+                      "lineSpacing": 0
+                    }
+                  }
+                ],
+                "children": []
+              },
+              {
+                "type": "outlineElement",
+                "id": "{AE0D8CFA-58E2-5905-BE84-B586AFA70D5B}#1",
+                "level": 1,
+                "createdAt": "2026-10-16T09:00:00.000Z",
+                "lastModified": "2026-10-16T09:00:00.000Z",
+                "content": [
+                  {
+                    "type": "richText",
+                    "id": "{79A31AEB-7B71-592A-A4EB-93341451D5A0}#1",
+                    "text": "﷐e﷮iπ﷯+1=0",
+                    "runs": [
+                      {
+                        "start": 0,
+                        "end": 1,
+                        "text": "﷐",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "mathObject": {
+                            "type": 31,
+                            "args": 2
+                          },
+                          "languageId": 1033
+                        }
+                      },
+                      {
+                        "start": 1,
+                        "end": 10,
+                        "text": "e﷮iπ﷯+1=0",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "languageId": 1033
+                        }
+                      }
+                    ],
+                    "paragraph": {
+                      "font": "Calibri",
+                      "fontSize": 11,
+                      "styleId": "p",
+                      "spaceBefore": 0,
+                      "spaceAfter": 0,
+                      "lineSpacing": 0
+                    }
+                  }
+                ],
+                "children": []
+              },
+              {
+                "type": "outlineElement",
+                "id": "{A52BE4F8-8A98-572E-A2E9-DB7BBFADC6EF}#1",
+                "level": 1,
+                "createdAt": "2026-10-16T09:00:00.000Z",
+                "lastModified": "2026-10-16T09:00:00.000Z",
+                "content": [
+                  {
+                    "type": "richText",
+                    "id": "{79DFDB82-ABF7-541C-8CAA-9FCFD2406DE2}#1",
+                    "text": "﷐﷐log﷮2﷯﷮x﷯",
+                    "runs": [
+                      {
+                        "start": 0,
+                        "end": 1,
+                        "text": "﷐",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "mathObject": {
+                            "type": 17,
+                            "args": 2
+                          },
+                          "languageId": 1033
+                        }
+                      },
+                      {
+                        "start": 1,
+                        "end": 2,
+                        "text": "﷐",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "mathObject": {
+                            "type": 29,
+                            "args": 2
+                          },
+                          "languageId": 1033
+                        }
+                      },
+                      {
+                        "start": 2,
+                        "end": 11,
+                        "text": "log﷮2﷯﷮x﷯",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "languageId": 1033
+                        }
+                      }
+                    ],
+                    "paragraph": {
+                      "font": "Calibri",
+                      "fontSize": 11,
+                      "styleId": "p",
+                      "spaceBefore": 0,
+                      "spaceAfter": 0,
+                      "lineSpacing": 0
+                    }
+                  }
+                ],
+                "children": []
+              },
+              {
+                "type": "outlineElement",
+                "id": "{3AF4E879-DD64-5D7F-A595-75DC6EA2FFB7}#1",
+                "level": 1,
+                "createdAt": "2026-10-16T09:00:00.000Z",
+                "lastModified": "2026-10-16T09:00:00.000Z",
+                "content": [
+                  {
+                    "type": "richText",
+                    "id": "{C94863CF-BCF9-5082-814B-509CA6E436AB}#1",
+                    "text": "﷐0﷮1﷮f﷯﷐x﷯dx",
+                    "runs": [
+                      {
+                        "start": 0,
+                        "end": 1,
+                        "text": "﷐",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "mathObject": {
+                            "type": 21,
+                            "args": 3,
+                            "char": 8747
+                          },
+                          "languageId": 1033
+                        }
+                      },
+                      {
+                        "start": 1,
+                        "end": 7,
+                        "text": "0﷮1﷮f﷯",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "languageId": 1033
+                        }
+                      },
+                      {
+                        "start": 7,
+                        "end": 8,
+                        "text": "﷐",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "mathObject": {
+                            "type": 13,
+                            "args": 1,
+                            "char": 40,
+                            "char1": 41
+                          },
+                          "languageId": 1033
+                        }
+                      },
+                      {
+                        "start": 8,
+                        "end": 12,
+                        "text": "x﷯dx",
+                        "style": {
+                          "font": "Cambria Math",
+                          "math": true,
+                          "languageId": 1033
+                        }
+                      }
+                    ],
+                    "paragraph": {
+                      "font": "Calibri",
+                      "fontSize": 11,
+                      "styleId": "p",
+                      "spaceBefore": 0,
+                      "spaceAfter": 0,
+                      "lineSpacing": 0
+                    }
+                  }
+                ],
+                "children": []
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    "entityGuid": "ᰦ与橲啖څ㽬倥",
+    "createdAt": "2026-10-16T09:00:00.000Z",
+    "name": "Equations"
+  },
+  "diagnostics": {
+    "warnings": [],
+    "encryptedObjectSpaces": []
+  }
+}
