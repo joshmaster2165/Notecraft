@@ -31,7 +31,7 @@ interface Props {
   placeholder?: string;
 }
 
-const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+export const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 export const mod = (e: { metaKey: boolean; ctrlKey: boolean }) => (isMac ? e.metaKey : e.ctrlKey);
 
 const darkPaper = () => document.documentElement.dataset.paper === "dark";

@@ -62,8 +62,9 @@ pub fn install(app: &App<Wry>) -> tauri::Result<()> {
         .item(&item("pageWidth", "Zoom to Page Width", None)?)
         .separator()
         .item(&item("fullPage", "Full Page View", Some("CmdOrCtrl+Shift+F"))?)
-        .item(&item("toggleNav", "Show or Hide Notebooks", Some("CmdOrCtrl+Alt+1"))?)
-        .item(&item("togglePages", "Show or Hide Page List", Some("CmdOrCtrl+Alt+2"))?)
+        // ⌃⌘S is the Mac sidebar shortcut; ⌘⌥1–6 belong to the paragraph styles.
+        .item(&item("toggleNav", "Show or Hide Notebooks", Some(if cfg!(target_os = "macos") { "Ctrl+Cmd+S" } else { "Ctrl+Alt+S" }))?)
+        .item(&item("togglePages", "Show or Hide Page List", Some(if cfg!(target_os = "macos") { "Ctrl+Cmd+Shift+S" } else { "Ctrl+Alt+Shift+S" }))?)
         .item(&item("versions", "Page Versions", Some("CmdOrCtrl+Shift+H"))?)
         .item(&item("templates", "Page Templates…", None)?)
         .separator()

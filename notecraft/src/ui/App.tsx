@@ -16,7 +16,7 @@ import { togglePane, useLayout } from "./layout.ts";
 import { lockAll, lockState, useLockVersion } from "../store/locks.ts";
 import { FindBar } from "./FindBar.tsx";
 import { canvasApi } from "./canvasApi.ts";
-import { mod } from "./editor/Paragraph.tsx";
+import { isMac, mod } from "./editor/Paragraph.tsx";
 import { desktop } from "../desktop.ts";
 import * as ops from "../model/ops.ts";
 import { currentPage, exportNotebook, exportOneNoteSection, exportPageMarkdown, exportWord, newNotebook, newPage, newSection, newSectionGroup, printPage } from "../store/actions.ts";
@@ -102,10 +102,11 @@ function useGlobalShortcuts() {
         e.preventDefault();
         store.redo();
         repairSelection();
-      } else if (!desktop && e.altKey && (e.code === "Digit1" || e.code === "Digit2")) {
-        // Show or hide the notebook pane (⌘⌥1) or the page list (⌘⌥2); the desktop app's View menu has the same.
+      } else if (!desktop && e.code === "KeyS" && (isMac ? e.ctrlKey : e.altKey)) {
+        // Show or hide the notebook pane (⌃⌘S, the Mac sidebar shortcut) or, with ⇧, the page list.
+        // ⌘⌥digits stay the paragraph styles. The desktop app's View menu has the same.
         e.preventDefault();
-        togglePane(e.code === "Digit1" ? "nav" : "pages");
+        togglePane(e.shiftKey ? "pages" : "nav");
       } else if (e.altKey && e.code === "KeyL") {
         // OneNote's Lock All (⌘⌥L).
         e.preventDefault();
