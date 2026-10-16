@@ -71,6 +71,8 @@ export const Icon = {
   video: (p: P) => <svg {...base(p)}><rect x="2.5" y="5" width="11" height="10" rx="2" /><path d="m13.5 9 4-2.5v7l-4-2.5" /></svg>,
   wand: (p: P) => <svg {...base(p)}><path d="m3 17 9.5-9.5M11 6l3 3" /><path d="M14 2.5v2M17.5 6h-2M16.5 3.5l-1.4 1.4" /></svg>,
   text: (p: P) => <svg {...base(p)}><path d="M4 5h12M10 5v11M7 16h6" /></svg>,
+  collapse: (p: P) => <svg {...base(p)}><rect x="2.5" y="3.5" width="15" height="13" rx="2.5" /><path d="M7.5 3.5v13M13.5 8 11.5 10l2 2" /></svg>,
+  expand: (p: P) => <svg {...base(p)}><rect x="2.5" y="3.5" width="15" height="13" rx="2.5" /><path d="M7.5 3.5v13M11.5 8l2 2-2 2" /></svg>,
   lock: (p: P) => <svg {...base(p)}><rect x="4" y="9" width="12" height="8.5" rx="2" /><path d="M6.8 9V6.5a3.2 3.2 0 0 1 6.4 0V9" /></svg>,
   unlock: (p: P) => <svg {...base(p)}><rect x="4" y="9" width="12" height="8.5" rx="2" /><path d="M6.8 9V6.5a3.2 3.2 0 0 1 6.2-1.1" /></svg>,
   equation: (p: P) => <svg {...base(p)}><path d="M15 4.5H5l5 5.5-5 5.5h10" /></svg>,

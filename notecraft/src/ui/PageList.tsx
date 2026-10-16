@@ -7,6 +7,8 @@ import { copyPageLink } from "../store/links.ts";
 import { Icon } from "./icons.tsx";
 import { desktop } from "../desktop.ts";
 import { lockState, useLockVersion } from "../store/locks.ts";
+import { useLayout } from "./layout.ts";
+import { CollapseButton, PaneRail, PaneResizer } from "./PaneChrome.tsx";
 
 const short = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" });
 
@@ -18,8 +20,16 @@ export function PageList() {
   const [dropIndex, setDropIndex] = useState<number | null>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null);
   useLockVersion();
+  const collapsed = useLayout().pages.collapsed;
 
-  if (!section || !sectionId) return <aside className="pagelist" />;
+  if (collapsed) {
+    return (
+      <aside className="pagelist is-collapsed" aria-label="Pages (hidden)">
+        <PaneRail pane="pages" label={section?.name ?? "Pages"} color={section?.color} />
+      </aside>
+    );
+  }
+  if (!section || !sectionId) return <aside className="pagelist"><PaneResizer pane="pages" /></aside>;
   if (lockState(section) === "locked") {
     return (
       <aside className="pagelist" aria-label={`${section.name} (locked)`}>
@@ -27,8 +37,10 @@ export function PageList() {
         <header className="pagelist-head">
           <span className="section-tab" style={{ background: section.color }} />
           <h2>{section.name}</h2>
+          <CollapseButton pane="pages" />
         </header>
         <p className="pagelist-locked"><Icon.lock width={16} height={16} /> This section is locked.</p>
+        <PaneResizer pane="pages" />
       </aside>
     );
   }
@@ -47,6 +59,7 @@ export function PageList() {
             <Icon.chevron width={14} height={14} />
           </button>
         </span>
+          <CollapseButton pane="pages" />
       </header>
       <ol className="pages" onDragLeave={() => setDropIndex(null)}>
         {section.pages.map((p, i) => (
@@ -107,6 +120,7 @@ export function PageList() {
         ))}
         {dropIndex === section.pages.length && <li className="drop-end" />}
       </ol>
+      <PaneResizer pane="pages" />
     </aside>
   );
 }

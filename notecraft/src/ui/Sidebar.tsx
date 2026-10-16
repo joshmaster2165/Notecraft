@@ -9,6 +9,8 @@ import { desktop } from "../desktop.ts";
 import { copySectionLink } from "../store/links.ts";
 import { lockState, useLockVersion } from "../store/locks.ts";
 import { SectionLockItems } from "./LockViews.tsx";
+import { useLayout } from "./layout.ts";
+import { CollapseButton, PaneRail, PaneResizer } from "./PaneChrome.tsx";
 
 function InlineRename({ value, onDone }: { value: string; onDone: (v: string | null) => void }) {
   const ref = useRef<HTMLInputElement>(null);
@@ -207,9 +209,12 @@ export function Sidebar() {
   const folderInput = useRef<HTMLInputElement>(null);
   // React doesn't know webkitdirectory; set it on the element.
   useEffect(() => folderInput.current?.setAttribute("webkitdirectory", ""), []);
+  const collapsed = useLayout().nav.collapsed;
 
+  // Collapsed, the pane keeps its content mounted (the import inputs live here) but shows only its rail.
   return (
-    <nav className="sidebar" aria-label="Notebooks">
+    <nav className={`sidebar${collapsed ? " is-collapsed" : ""}`} aria-label="Notebooks">
+      {collapsed && <PaneRail pane="nav" label={notebook?.name ?? "Notebooks"} />}
       {desktop && <div className="drag-strip" data-tauri-drag-region />}
       <div className="brand">
         <Logo />
@@ -217,6 +222,7 @@ export function Sidebar() {
         <button className="icon-btn" title="Search all notebooks (⌘E)" aria-label="Search" onClick={() => store.setUi({ searchOpen: true })}>
           <Icon.search />
         </button>
+        <CollapseButton pane="nav" />
       </div>
 
       <div className="notebook-picker">
@@ -324,6 +330,7 @@ export function Sidebar() {
           }}
         />
       </div>
+      {!collapsed && <PaneResizer pane="nav" />}
     </nav>
   );
 }

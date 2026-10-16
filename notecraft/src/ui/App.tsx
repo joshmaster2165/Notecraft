@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { store, useStore } from "../store/store.ts";
 import { chooseLibraryFolder, selectPage, selectSection, importFiles, importNotebookFolder, importOneNoteFolder, readDroppedEntries, repairSelection, revealLibrary } from "../store/actions.ts";
 import { Sidebar } from "./Sidebar.tsx";
@@ -12,6 +12,7 @@ import { AssistantPanel } from "./AssistantPanel.tsx";
 import { Dialogs } from "./Dialogs.tsx";
 import { LockedSection } from "./LockViews.tsx";
 import { RecordingPreview } from "./RecordingPreview.tsx";
+import { togglePane, useLayout } from "./layout.ts";
 import { lockAll, lockState, useLockVersion } from "../store/locks.ts";
 import { FindBar } from "./FindBar.tsx";
 import { canvasApi } from "./canvasApi.ts";
@@ -68,6 +69,8 @@ function useDesktopCommands() {
       },
       pageWidth: () => canvasApi.current?.zoomToPageWidth(),
       fullPage: () => store.setUi({ fullPage: !ui().fullPage }),
+      toggleNav: () => togglePane("nav"),
+      togglePages: () => togglePane("pages"),
       versions: () => currentPage() && store.setUi({ sidePanel: ui().sidePanel === "versions" ? null : "versions", preview: null }),
       templates: () => store.setUi({ dialog: { kind: "templates" } }),
       settings: () => store.setUi({ dialog: { kind: "settings" } }),
@@ -99,6 +102,10 @@ function useGlobalShortcuts() {
         e.preventDefault();
         store.redo();
         repairSelection();
+      } else if (!desktop && e.altKey && (e.code === "Digit1" || e.code === "Digit2")) {
+        // Show or hide the notebook pane (⌘⌥1) or the page list (⌘⌥2); the desktop app's View menu has the same.
+        e.preventDefault();
+        togglePane(e.code === "Digit1" ? "nav" : "pages");
       } else if (e.altKey && e.code === "KeyL") {
         // OneNote's Lock All (⌘⌥L).
         e.preventDefault();
@@ -168,6 +175,7 @@ export function App() {
   const section = useStore((s) => (s.ui.sectionId ? ops.findSection(s.lib, s.ui.sectionId)?.section : undefined));
   useLockVersion();
   const locked = lockState(section) === "locked" ? section : undefined;
+  const panes = useLayout();
   const [dragging, setDragging] = useState(false);
   useGlobalShortcuts();
   useDesktopCommands();
@@ -176,7 +184,8 @@ export function App() {
 
   return (
     <div
-      className={`app${fullPage ? " is-full-page" : ""}${drawing ? " is-drawing" : ""}`}
+      className={`app${fullPage ? " is-full-page" : ""}${drawing ? " is-drawing" : ""}${panes.nav.collapsed ? " nav-collapsed" : ""}${panes.pages.collapsed ? " pages-collapsed" : ""}`}
+      style={{ "--nav-w": `${panes.nav.width}px`, "--pages-w": `${panes.pages.width}px` } as CSSProperties}
       onDragOver={(e) => {
         if (e.dataTransfer.types.includes("Files")) {
           e.preventDefault();
